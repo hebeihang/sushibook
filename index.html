@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Sushibook - 动态电子书引擎。将文字变成有生命的粒子，让阅读成为一场视觉旅行。" />
+  <title>Sushibook · 生命感文档引擎</title>
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+</head>
+<body>
+  <div id="app">
+    <!-- 加载屏幕 -->
+    <div id="loading-screen">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">加载字体中...</div>
+    </div>
+
+    <!-- ===== 主分栏布局 ===== -->
+    <div id="split-layout">
+
+      <!-- 左侧：编辑器区 -->
+      <div id="editor-area">
+        <!-- 编辑器头部工具栏 -->
+        <div id="editor-toolbar">
+          <span class="toolbar-title">📝 SushiML Editor</span>
+          <div class="toolbar-actions">
+            <button id="ai-fab" class="toolbar-btn" title="AI 生成">✨ AI</button>
+            <button id="editor-apply-btn" class="toolbar-btn toolbar-btn-primary" title="应用到预览">▶ 应用</button>
+          </div>
+        </div>
+
+        <!-- CodeMirror 挂载点 -->
+        <div id="editor-container"></div>
+
+        <!-- 指令面板 -->
+        <div id="directive-panel"></div>
+      </div>
+
+      <!-- 分栏拖拽条 -->
+      <div id="split-handle" title="拖拽调整宽度"></div>
+
+      <!-- 右侧：预览区 -->
+      <div id="preview-area">
+        <!-- 场景标题 -->
+        <div id="scene-title">START</div>
+
+        <!-- 情绪指示器 -->
+        <div id="mood-indicator" data-mood="default">
+          <span class="mood-dot"></span>
+          <span class="mood-label">DEFAULT</span>
+        </div>
+
+        <!-- Canvas 渲染容器 -->
+        <div id="canvas-container"></div>
+
+        <!-- 底部 UI 面板 -->
+        <div id="ui-panel">
+          <div id="choices-container"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI 生成面板（浮层） -->
+    <div id="ai-panel" class="ai-panel">
+      <div class="ai-panel-header">
+        <span class="ai-panel-title">✨ AI 故事生成</span>
+        <button id="ai-close-btn" class="ai-close-btn">✕</button>
+      </div>
+      <div class="ai-panel-body">
+        <textarea id="ai-prompt" class="ai-prompt" rows="3"
+          placeholder="描述你想要的故事... 例如：一个侦探在雨夜调查神秘失踪案"></textarea>
+        <div class="ai-actions">
+          <button id="ai-generate-btn" class="ai-generate-btn">
+            <span class="ai-btn-text">生成故事</span>
+            <span class="ai-btn-loading" style="display:none">生成中...</span>
+          </button>
+          <button id="ai-settings-toggle" class="ai-settings-toggle">⚙</button>
+        </div>
+        <div id="ai-settings" class="ai-settings" style="display:none">
+          <label class="ai-label">
+            API Endpoint
+            <input type="text" id="ai-endpoint" class="ai-input" />
+          </label>
+          <label class="ai-label">
+            API Key
+            <input type="password" id="ai-apikey" class="ai-input" placeholder="sk-..." />
+          </label>
+          <label class="ai-label">
+            Model
+            <input type="text" id="ai-model" class="ai-input" />
+          </label>
+        </div>
+        <div id="ai-status" class="ai-status"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
