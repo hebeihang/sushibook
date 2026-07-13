@@ -157,9 +157,37 @@ export class EditorPanel {
     this.view.focus();
   }
 
+  /**
+   * 跳转到场景声明行并滚动到视口中央
+   * @param sceneId - 场景 ID（子场景为 父.子，按 ### 子名 定位）
+   */
+  public revealScene(sceneId: string): void {
+    const dotIdx = sceneId.indexOf('.');
+    const name = dotIdx === -1 ? sceneId : sceneId.slice(dotIdx + 1);
+    const marker = dotIdx === -1 ? '##' : '###';
+    const re = new RegExp(`^${marker}\\s+${escapeRegExp(name)}\\b`);
+
+    const doc = this.view.state.doc;
+    for (let i = 1; i <= doc.lines; i++) {
+      const line = doc.line(i);
+      if (re.test(line.text)) {
+        this.view.dispatch({
+          selection: { anchor: line.from },
+          effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
+        });
+        this.view.focus();
+        return;
+      }
+    }
+  }
+
   /** 销毁 */
   public destroy(): void {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     this.view.destroy();
   }
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

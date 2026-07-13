@@ -9,7 +9,7 @@ export type ParticleState = 'idle' | 'flying' | 'fading';
 /**
  * 情绪类型
  */
-export type MoodType = 'default' | 'tense' | 'float';
+export type MoodType = 'default' | 'tense' | 'float' | 'storm';
 
 /**
  * 粒子配置

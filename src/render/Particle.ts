@@ -4,20 +4,21 @@ import { DEFAULT_PARTICLE_CONFIG } from '../types/particle';
 
 /**
  * 字符粒子
- * 
+ *
  * 每个字符在 Canvas 上对应一个 Particle 对象。
- * 
+ *
  * 状态机设计（修复"变脸"问题）：
  * - idle:   已到达目标位置，静止中
  * - flying: 正在飞向目标位置
  * - fading: 正在淡出，即将死亡
- * 
+ *
  * setChar() 在 flying 状态时延迟到粒子落地后才生效，
  * 避免用户看到字符在飞行途中突变（"变脸"问题）。
- * 
- * Lerp + 吸附阈值设计（修复微抖问题）：
- * 当距离小于 SNAP_DISTANCE 时直接吸附到目标位置，
- * 使粒子在静止后完全停止计算，为情绪动效腾出干净的切换空间。
+ *
+ * 物理与动效解耦：
+ * pos 只由 update() 的物理插值控制；情绪/词语动效通过
+ * render(dx, dy, alpha) 以锚点偏移的方式叠加，绝不污染 pos，
+ * 因此动效不会造成累积漂移。
  */
 export class Particle {
   private p: p5;
@@ -34,12 +35,14 @@ export class Particle {
   private appearDelay: number = 0;
   /** 粒子创建时间戳 */
   private birthTime: number = 0;
-  /** 词语级自定义颜色（如 "#ff6b6b"） */
-  private wordColor: string | null = null;
+  /** 进入 idle 状态的帧号（用于状态动效计时） */
+  private idleSince: number = 0;
+  /** 词语级自定义颜色（如 "#ff6b6b"），已解析为 RGB */
+  private wordColorRGB: [number, number, number] | null = null;
   /** 是否为标记词语 [[word]] */
-  private isMarked: boolean = false;
-  /** 词语入场动效类型 */
-  private enterEffect: string | null = null;
+  private marked: boolean = false;
+  /** 词语持续动效类型 */
+  private stateEffect: string | null = null;
   /** 注释文本 */
   private annotation: string | null = null;
 
@@ -63,10 +66,8 @@ export class Particle {
    */
   public setChar(char: string): void {
     if (this.state === 'idle') {
-      // 粒子静止：立即生效，无视觉突变
       this.char = char;
     } else {
-      // 粒子飞行中：挂起，等落地后在 update() 里消费
       this.pendingChar = char;
     }
   }
@@ -78,12 +79,6 @@ export class Particle {
     this.target.set(x, y);
     this.targetOpacity = opacity;
     this.state = opacity === 0 ? 'fading' : 'flying';
-
-    // 针对特定入场特效初始化位置
-    if (this.state === 'flying' && this.enterEffect === 'fly-in-left') {
-      this.pos.set(x - 200, y); // 从左侧飞入
-      this.opacity = 0;
-    }
   }
 
   /**
@@ -96,30 +91,32 @@ export class Particle {
   }
 
   /**
-   * 设置词语级元数据（颜色、标记状态、动效、注释）
+   * 设置词语级元数据（颜色、标记状态、持续动效、注释）
    */
-  public setWordMeta(isMarked: boolean, wordColor?: string, enter?: string, annotation?: string): void {
-    this.isMarked = isMarked;
-    this.wordColor = wordColor || null;
-    this.enterEffect = enter || null;
+  public setWordMeta(isMarked: boolean, wordColor?: string, effect?: string, annotation?: string): void {
+    this.marked = isMarked;
+    this.wordColorRGB = wordColor ? parseHexColor(wordColor) : null;
+    this.stateEffect = effect || null;
     this.annotation = annotation || null;
   }
 
   /**
-   * 每帧更新
-   * 含吸附逻辑：距离 < threshold 时直接吸附
+   * 每帧物理更新
+   * idle 状态早退：静止粒子跳过位置计算
    */
   public update(): void {
     // 延迟门控：冻结直到延迟结束
-    if (this.appearDelay > 0 && performance.now() - this.birthTime < this.appearDelay) {
+    if (this.isGated()) return;
+
+    // idle 早退优化：位置和透明度都已稳定，无事可做
+    if (this.state === 'idle' && this.opacity === this.targetOpacity) {
       return;
     }
 
     const dx = this.target.x - this.pos.x;
     const dy = this.target.y - this.pos.y;
-    const distSq = dx * dx + dy * dy; // 避免 sqrt，性能更好
-    const snapDistSq =
-      this.config.snapDistance * this.config.snapDistance;
+    const distSq = dx * dx + dy * dy; // 避免 sqrt
+    const snapDistSq = this.config.snapDistance * this.config.snapDistance;
 
     if (distSq < snapDistSq) {
       // 吸附：直接到位，消除微抖
@@ -133,20 +130,12 @@ export class Particle {
 
       if (this.state === 'flying') {
         this.state = 'idle';
+        this.idleSince = this.p.frameCount;
       }
     } else {
       // 缓动飞行
       this.pos.x += dx * this.config.easing;
       this.pos.y += dy * this.config.easing;
-    }
-
-    // 处理特殊入场持续动效
-    if (this.state === 'idle') {
-      if (this.enterEffect === 'sink') {
-        this.pos.y += 0.2; // 缓慢下沉
-      } else if (this.enterEffect === 'swim') {
-        this.pos.x += Math.sin(this.p.frameCount * 0.05) * 0.5; // 左右游动
-      }
     }
 
     // 透明度补间 + 吸附
@@ -160,69 +149,33 @@ export class Particle {
 
   /**
    * 渲染字符
+   * @param dx - 动效 X 偏移（相对锚点）
+   * @param dy - 动效 Y 偏移
+   * @param alphaMul - 透明度乘数（0-1）
    */
-  public display(): void {
-    // 延迟门控
-    if (this.appearDelay > 0 && performance.now() - this.birthTime < this.appearDelay) {
-      return;
-    }
+  public render(dx: number = 0, dy: number = 0, alphaMul: number = 1): void {
+    if (this.isGated()) return;
     if (this.opacity < 1) return;
 
+    const alpha = this.opacity * alphaMul;
+
     // 颜色优先级：自定义色 > 标记词语高亮色 > 默认色
-    if (this.wordColor) {
-      // 解析 hex 颜色
-      const hex = this.wordColor.replace('#', '');
-      const r = parseInt(hex.substring(0, 2), 16);
-      const g = parseInt(hex.substring(2, 4), 16);
-      const b = parseInt(hex.substring(4, 6), 16);
-      this.p.fill(r, g, b, this.opacity);
-    } else if (this.isMarked) {
-      // 标记词语默认高亮（淡紫/金色）
-      this.p.fill(255, 184, 108, this.opacity); // #ffb86c 橙金色
+    if (this.wordColorRGB) {
+      const [r, g, b] = this.wordColorRGB;
+      this.p.fill(r, g, b, alpha);
+    } else if (this.marked) {
+      this.p.fill(255, 184, 108, alpha); // #ffb86c 橙金色
     } else {
       const [r, g, b] = this.config.textColor;
-      this.p.fill(r, g, b, this.opacity);
+      this.p.fill(r, g, b, alpha);
     }
     this.p.noStroke();
-    this.p.text(this.char, this.pos.x, this.pos.y);
+    this.p.text(this.char, this.pos.x + dx, this.pos.y + dy);
   }
 
-  /**
-   * 应用情绪力场（Week 3 预留接口）
-   * 只在 idle 状态时叠加，flying 时不叠加
-   */
-  public applyMoodForce(mood: string, _noiseOffset: number): void {
-    if (this.state !== 'idle') return;
-
-    switch (mood) {
-      case 'tense': {
-        // 高频震颤
-        const nx = (this.p.noise(this.pos.x * 0.01, _noiseOffset) - 0.5) * 4;
-        const ny =
-          (this.p.noise(this.pos.y * 0.01, _noiseOffset + 100) - 0.5) * 4;
-        this.pos.x += nx;
-        this.pos.y += ny;
-        break;
-      }
-      case 'float': {
-        // 流体漂浮
-        const fx =
-          (this.p.noise(this.pos.x * 0.005, _noiseOffset * 0.5) - 0.5) * 2;
-        const fy =
-          (this.p.noise(this.pos.y * 0.005, _noiseOffset * 0.5 + 50) - 0.5) *
-          1.5;
-        this.pos.x += fx;
-        this.pos.y += fy;
-        break;
-      }
-      default: {
-        // 默认呼吸感：微弱透明度波动
-        const breathe =
-          this.p.sin(this.p.frameCount * 0.02 + this.pos.x * 0.01) * 10;
-        this.opacity = Math.min(255, Math.max(0, this.targetOpacity + breathe));
-        break;
-      }
-    }
+  /** typewriter 延迟是否仍在生效 */
+  private isGated(): boolean {
+    return this.appearDelay > 0 && performance.now() - this.birthTime < this.appearDelay;
   }
 
   /** 粒子是否已静止 */
@@ -230,9 +183,24 @@ export class Particle {
     return this.state === 'idle';
   }
 
+  /** idle 后经过的帧数 */
+  public get idleAge(): number {
+    return this.state === 'idle' ? this.p.frameCount - this.idleSince : 0;
+  }
+
   /** 粒子是否已死亡（淡出完成） */
   public get isDead(): boolean {
     return this.state === 'fading' && this.opacity <= this.config.snapOpacity;
+  }
+
+  /** 目标（锚点）X 坐标 */
+  public get anchorX(): number {
+    return this.target.x;
+  }
+
+  /** 目标（锚点）Y 坐标 */
+  public get anchorY(): number {
+    return this.target.y;
   }
 
   /** 当前 X 坐标 */
@@ -250,6 +218,11 @@ export class Particle {
     return this.state;
   }
 
+  /** 词语持续动效类型 */
+  public get wordStateEffect(): string | null {
+    return this.stateEffect;
+  }
+
   /**
    * 检查鼠标是否在粒子上（用于 Tooltip）
    */
@@ -263,4 +236,12 @@ export class Particle {
   public getAnnotation(): string | null {
     return this.annotation;
   }
+}
+
+/** 解析 #rrggbb 颜色，非法输入返回 null */
+function parseHexColor(hex: string): [number, number, number] | null {
+  const m = hex.trim().match(/^#?([0-9a-fA-F]{6})$/);
+  if (!m) return null;
+  const v = parseInt(m[1], 16);
+  return [(v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff];
 }

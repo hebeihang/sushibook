@@ -1,6 +1,6 @@
 /**
  * SushiML AST 类型定义
- * 
+ *
  * 三层粒度：Scene(段落级) → Sentence(句子级) → Token(词语级)
  * 双轨设计：每层都有独立的 directives 用于效果标注
  */
@@ -11,15 +11,15 @@
 
 /** 段落级指令 — frontmatter */
 export interface SceneDirectives {
-  mood?: string;    // default | tense | float
+  mood?: string;    // default | tense | float | storm
   enter?: string;   // fade-in | dissolve | typewriter
   speed?: string;   // slow | normal | fast
   [key: string]: string | undefined;
 }
 
 /**
- * 句子级指令 — 行内 {key: val}
- * 
+ * 句子级指令 — 行尾 {key: val}
+ *
  * pause 语义约定：
  *   {pause: 1200}        → pause-after（默认：本句显示完毕后等待 1200ms 再显示下一句）
  *   {pause-before: 800}  → 本句出现前等待 800ms
@@ -36,12 +36,27 @@ export interface SentenceDirectives {
   [key: string]: string | undefined;
 }
 
+/**
+ * 行尾指令白名单：只有全部 key 命中白名单的 {…} 才被识别为句子指令，
+ * 否则按 {表达式插值} 处理（与 Kiny「{} 只有一种含义」的原则折中，
+ * 保持 SushiML 效果轨语法的向后兼容）。
+ */
+export const SENTENCE_DIRECTIVE_KEYS: ReadonlySet<string> = new Set([
+  'typewriter',
+  'pause',
+  'pause-before',
+  'pause-after',
+  'flash',
+  'size',
+  'delay',
+]);
+
 /** 词语级指令 — [[word]]{key: val} */
 export interface WordDirectives {
-  enter?: string;     // fly-in-left | sink | swim
+  enter?: string;     // fly-in-left | rain | flare | sink | swim | heat | drift | sparkle | pull
   relation?: string;  // char | place | item
   glossary?: string;  // "true"
-  color?: string;     // "#ff6b6b" | "accent"
+  color?: string;     // "#ff6b6b"
   [key: string]: string | undefined;
 }
 
@@ -66,49 +81,124 @@ export interface MarkedToken {
   /**
    * 首次出现规则：
    * 同一场景中相同 text 的标记，只有第一次出现时为 true。
-   * 带有 enter 指令的标记，默认只在首次出现时执行动效。
    */
   isFirstOccurrence: boolean;
 }
 
-export type SushiToken = TextToken | MarkedToken;
+/** 表达式插值 token：{ JS 表达式 } */
+export interface ExprToken {
+  type: 'expr';
+  /** 原始表达式代码 */
+  code: string;
+}
+
+/** 变体函数类型 */
+export type VariantKind = 'seq' | 'cycle' | 'once' | 'shuffle';
+
+/** 活文本变体 token：{seq:A|B|C} 等，按场景访问次数推进 */
+export interface VariantToken {
+  type: 'variant';
+  kind: VariantKind;
+  items: string[];
+  /** 在场景内的变体调用点索引（用于 shuffle 的确定性种子） */
+  variantIndex: number;
+}
+
+export type SushiToken = TextToken | MarkedToken | ExprToken | VariantToken;
 
 /** 一个句子（一行文本） */
 export interface SushiSentence {
   tokens: SushiToken[];
   directives: SentenceDirectives;
-  /** 去掉标注后的纯文本 */
+  /** 原始形态的纯文本（插值/变体保留 {…} 源码） */
   plainText: string;
-  /** 在场景内的句子索引 */
+  /** 在场景顶层的句子索引（分支体内句子为 -1，显示索引由运行时缓冲分配） */
   index: number;
+  /** 粘连：行尾 <>，下一句不换行直接接上 */
+  glueAfter: boolean;
 }
 
 /** 一个选项 */
 export interface SushiChoice {
   text: string;
-  target: string;
+  /**
+   * 跳转目标场景 ID；特殊值 "END" 表示结局。
+   * 可为空（undefined）：选中后只执行分支体，之后汇合继续。
+   */
+  target?: string;
+  /** 一次性选项（* 前缀）：选过即消失；>> 为粘性 */
+  once: boolean;
+  /** 条件表达式（可选）：为假时不显示 */
+  condition?: string;
+  /**
+   * 选项标签（Kiny §5.5）：>> (greet) 文本
+   * 等价于一个自动计数的全局变量，值 = 该选项被选中的次数（0 = 未选）
+   */
+  label?: string;
+  /** 分支体（Kiny §6）：选中后追加执行的场景项，执行完毕后汇合 */
+  body: SceneItem[];
 }
+
+// ============================================================
+// 场景执行流（Kiny 风格顺序模型，追加式渲染）
+// ============================================================
+
+/** @if 条件链的一个分支 */
+export interface IfBranch {
+  /** 条件表达式；@else 分支为 null */
+  condition: string | null;
+  body: SceneItem[];
+}
+
+/** 场景内容项：场景体是 SceneItem 的顺序执行流 */
+export type SceneItem =
+  | { kind: 'sentence'; sentence: SushiSentence }
+  | { kind: 'logic'; code: string }
+  | { kind: 'command'; name: string; argsSource: string }
+  | { kind: 'divert'; target: string }
+  | { kind: 'if'; branches: IfBranch[] }
+  | { kind: 'choices'; choices: SushiChoice[] };
+
+/** 引擎内置命令集（Kiny §11） */
+export const KNOWN_COMMANDS: ReadonlySet<string> = new Set([
+  'bg_show',
+  'bg_hide',
+  'bgm_play',
+  'bgm_pause',
+  'bgm_stop',
+]);
 
 /** 一个场景 */
 export interface SushiScene {
   id: string;
   frontmatter: SceneDirectives;
+  /** 场景体：顺序执行流 */
+  items: SceneItem[];
+  /** 顶层句子视图（不含分支体内句子；兼容工具/测试） */
   sentences: SushiSentence[];
+  /** 顶层选项视图（所有顶层选项组扁平；兼容工具/测试） */
   choices: SushiChoice[];
+  /** 顶层 ~ 逻辑行视图（兼容工具/测试） */
+  logic: string[];
 }
 
 /** 完整文档 */
 export interface SushiDocument {
   scenes: Map<string, SushiScene>;
-  /** 场景 ID 的有序列表（保留原始顺序） */
+  /** 场景 ID 的有序列表（保留原始顺序；子场景 ID 形如 父.子） */
   sceneOrder: string[];
+  /** 序言区（第一个 ## 之前）的 ~ 逻辑行：全局变量声明 */
+  prelude: string[];
 }
+
+/** 特殊跳转目标：结局 */
+export const END_TARGET = 'END';
 
 // ============================================================
 // 字符元数据（Parser → LayoutEngine 桥接用）
 // ============================================================
 
-/** 每个字符对应的元数据，用于标注 LayoutSnapshot 中的 glyph */
+/** 每个字素对应的元数据，用于标注 LayoutSnapshot 中的 glyph */
 export interface CharMeta {
   sentenceIndex: number;
   isMarked: boolean;

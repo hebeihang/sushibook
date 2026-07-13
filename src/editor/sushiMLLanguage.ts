@@ -31,8 +31,13 @@ const sushiMLParser: StreamParser<SushiMLState> = {
   token(stream, state): string | null {
     // 行首匹配
     if (stream.sol()) {
-      // 场景标题 ##
-      if (stream.match(/^##\s+\S+/)) {
+      // 注释 //
+      if (stream.match(/^\/\/.*$/)) {
+        return 'comment';
+      }
+
+      // 场景标题 ## / 子场景 ###
+      if (stream.match(/^###?\s+\S+/)) {
         return 'heading';
       }
 
@@ -42,9 +47,34 @@ const sushiMLParser: StreamParser<SushiMLState> = {
         return 'meta';
       }
 
-      // 选项行 >> text -> target
-      if (stream.match(/^>>\s+.+->\s+\S+/)) {
+      // 逻辑行 ~ 语句
+      if (stream.match(/^~.*$/)) {
+        return 'operator';
+      }
+
+      // 独立跳转 -> 目标
+      if (stream.match(/^->\s+\S+\s*$/)) {
         return 'keyword';
+      }
+
+      // @if / @elif / @else 条件链
+      if (stream.match(/^@(if|elif)\s*\{[^}]*\}\s*$/) || stream.match(/^@else\s*$/)) {
+        return 'keyword';
+      }
+
+      // @命令(…)
+      if (stream.match(/^@[A-Za-z_][A-Za-z0-9_]*\s*\(.*\)\s*$/)) {
+        return 'annotation';
+      }
+
+      // 选项行 >> / *（可带 {条件}，目标可选）
+      if (stream.match(/^(>>|\*)\s+(\{[^}]*\}\s+)?\S.*$/)) {
+        return 'keyword';
+      }
+
+      // 分支体层级标记 >（可连续，> 间空格）
+      if (stream.match(/^(>\s*)+/)) {
+        return 'meta';
       }
     }
 
@@ -115,6 +145,8 @@ export const sushiMLHighlight = syntaxHighlighting(
     { tag: tags.keyword, color: '#bb86fc' },
     { tag: tags.link, color: '#ffb86c', fontWeight: '500' },
     { tag: tags.annotation, color: '#50fa7b', fontStyle: 'italic' },
+    { tag: tags.comment, color: '#555570', fontStyle: 'italic' },
+    { tag: tags.operator, color: '#00cec9' },
   ])
 );
 

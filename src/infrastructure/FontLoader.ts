@@ -12,12 +12,19 @@ export const FONT_CONFIG = {
   /** CSS font 简写格式，与 Canvas ctx.font 格式一致 */
   size: 20,
   lineHeight: 32,
+  /**
+   * 自托管字体 CSS 路径（优先于 CDN）。
+   * 若把字体文件放进 `public/fonts/` 并配好 @font-face，可彻底摆脱 Google Fonts 依赖，
+   * 解决国内/离线环境被墙导致的冷启动干等（bug B8）。留空则回退到 CDN。
+   */
+  localCssUrl: '',
   /** 完整的 CSS font 字符串 */
   get cssFont(): string {
     return `${this.size}px "${this.family}"`;
   },
-  /** Google Fonts CDN URL */
-  get cdnUrl(): string {
+  /** 解析使用的字体 CSS URL：自托管优先，否则 Google Fonts CDN */
+  get fontUrl(): string {
+    if (this.localCssUrl) return this.localCssUrl;
     return `https://fonts.googleapis.com/css2?family=${encodeURIComponent(this.family)}:wght@400;700&display=swap`;
   },
 } as const;
@@ -30,17 +37,17 @@ export const FONT_CONFIG = {
 export async function loadFont(
   family: string = FONT_CONFIG.family,
   size: number = FONT_CONFIG.size,
-  timeoutMs: number = 5000
+  timeoutMs: number = 2000
 ): Promise<string> {
   const fontString = `${size}px "${family}"`;
 
-  // 1. 注入 Google Fonts CSS（如果尚未加载）
+  // 1. 注入字体 CSS（自托管优先，否则 Google Fonts CDN）；若尚未加载
   const linkId = `font-link-${family.replace(/\s+/g, '-')}`;
   if (!document.getElementById(linkId)) {
     const link = document.createElement('link');
     link.id = linkId;
     link.rel = 'stylesheet';
-    link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:wght@400;700&display=swap`;
+    link.href = FONT_CONFIG.fontUrl;
     document.head.appendChild(link);
   }
 

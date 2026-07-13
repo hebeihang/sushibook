@@ -1,5 +1,5 @@
 import mitt from 'mitt';
-import type { StateChangeEvent } from '../types/ink';
+import type { StateChangeEvent } from '../types/story';
 import type { LayoutSnapshot } from '../types/layout';
 import type { SceneRenderData } from '../sushiml/bridge';
 
@@ -7,12 +7,14 @@ import type { SceneRenderData } from '../sushiml/bridge';
  * 事件类型映射
  */
 export type EventMap = {
-  /** Ink 状态变更 */
-  'ink:stateChange': StateChangeEvent;
+  /** 叙事状态变更 */
+  'story:stateChange': StateChangeEvent;
   /** 排版快照更新 */
   'layout:snapshotUpdate': LayoutSnapshot;
   /** SushiML 场景渲染数据 */
   'sushi:sceneData': SceneRenderData;
+  /** 宿主命令（@bg_show / @bgm_play …） */
+  'host:command': { name: string; args: unknown[] };
   /** 系统就绪 */
   'system:ready': void;
   /** 窗口 resize */

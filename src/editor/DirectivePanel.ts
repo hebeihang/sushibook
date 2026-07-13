@@ -54,13 +54,48 @@ const DIRECTIVE_GROUPS: DirectiveGroup[] = [
       },
       {
         label: 'enter: dissolve',
-        description: '溶解进入',
+        description: '溶解进入（默认）：旧文字淡出后新文字飞入',
         action: (ed) => ed.insertAtCursor('enter: dissolve\n'),
       },
       {
+        label: 'enter: fade-in',
+        description: '淡入进入：新旧文字交叉淡入',
+        action: (ed) => ed.insertAtCursor('enter: fade-in\n'),
+      },
+      {
+        label: 'enter: typewriter',
+        description: '打字机进入：新文字按阅读顺序级联出现',
+        action: (ed) => ed.insertAtCursor('enter: typewriter\n'),
+      },
+      {
         label: 'speed: slow',
-        description: '慢速渲染',
+        description: '慢速（过渡时长 ×1.6）',
         action: (ed) => ed.insertAtCursor('speed: slow\n'),
+      },
+      {
+        label: 'speed: fast',
+        description: '快速（过渡时长 ×0.6）',
+        action: (ed) => ed.insertAtCursor('speed: fast\n'),
+      },
+      {
+        label: '### 子场景',
+        description: '场景内分段；跳转用 -> 子名（同父内）或 -> 父.子',
+        action: (ed) => ed.insertAtCursor('\n### 子场景名\n子场景内容。\n'),
+      },
+      {
+        label: '-> 跳转',
+        description: '独立跳转行（场景/子场景/END）',
+        action: (ed) => ed.insertAtCursor('\n-> target_scene\n'),
+      },
+      {
+        label: '@bg_show(…)',
+        description: '显示背景：图片 URL、#颜色 或 CSS 渐变',
+        action: (ed) => ed.insertAtCursor('@bg_show("linear-gradient(180deg, #0b1026, #05070f)")\n'),
+      },
+      {
+        label: '@bgm_play(…)',
+        description: '循环播放背景音乐',
+        action: (ed) => ed.insertAtCursor('@bgm_play("assets/ambient.mp3")\n'),
       },
     ],
   },
@@ -94,16 +129,6 @@ const DIRECTIVE_GROUPS: DirectiveGroup[] = [
         description: '本句前等待 500ms',
         action: (ed) => ed.insertAtCursor('{pause-before: 500}'),
       },
-      {
-        label: '{flash: 2}',
-        description: '闪烁 2 次',
-        action: (ed) => ed.insertAtCursor('{flash: 2}'),
-      },
-      {
-        label: '{size: 2x}',
-        description: '放大 2 倍',
-        action: (ed) => ed.insertAtCursor('{size: 2x}'),
-      },
     ],
   },
   {
@@ -123,13 +148,38 @@ const DIRECTIVE_GROUPS: DirectiveGroup[] = [
       },
       {
         label: '{enter: fly-in-left}',
-        description: '飞入效果',
+        description: '从左侧飞入',
         action: (ed) => ed.insertAtCursor('{enter: fly-in-left}'),
       },
       {
+        label: '{enter: rain}',
+        description: '从天而降',
+        action: (ed) => ed.insertAtCursor('{enter: rain}'),
+      },
+      {
+        label: '{enter: flare}',
+        description: '四周炸裂汇聚',
+        action: (ed) => ed.insertAtCursor('{enter: flare}'),
+      },
+      {
         label: '{enter: sink}',
-        description: '下沉效果',
+        description: '缓缓下沉',
         action: (ed) => ed.insertAtCursor('{enter: sink}'),
+      },
+      {
+        label: '{enter: swim}',
+        description: '左右游动',
+        action: (ed) => ed.insertAtCursor('{enter: swim}'),
+      },
+      {
+        label: '{enter: sparkle}',
+        description: '星光闪烁',
+        action: (ed) => ed.insertAtCursor('{enter: sparkle}'),
+      },
+      {
+        label: '{enter: pull}',
+        description: '引力拉扯',
+        action: (ed) => ed.insertAtCursor('{enter: pull}'),
       },
       {
         label: '{color: #ff6b6b}',
@@ -142,19 +192,96 @@ const DIRECTIVE_GROUPS: DirectiveGroup[] = [
         action: (ed) => ed.insertAtCursor('{color: #6c5ce7}'),
       },
       {
-        label: '{relation: char}',
-        description: '角色类型',
-        action: (ed) => ed.insertAtCursor('{relation: char}'),
-      },
-      {
-        label: '{glossary: true}',
-        description: '词汇注释',
-        action: (ed) => ed.insertAtCursor('{glossary: true}'),
-      },
-      {
         label: '>> 选项 -> 目标',
-        description: '插入选项行',
+        description: '粘性选项（可重复选）',
         action: (ed) => ed.insertAtCursor('\n>> 选项文字 -> target_scene\n'),
+      },
+      {
+        label: '* 选项 -> 目标',
+        description: '一次性选项（选过即消失）',
+        action: (ed) => ed.insertAtCursor('\n* 选项文字 -> target_scene\n'),
+      },
+      {
+        label: '>> 选项 -> END',
+        description: '结局选项（显示结束画面）',
+        action: (ed) => ed.insertAtCursor('\n>> 合上书页 -> END\n'),
+      },
+    ],
+  },
+  {
+    id: 'logic',
+    label: '逻辑',
+    icon: '🧮',
+    items: [
+      {
+        label: '// 注释',
+        description: '整行注释，不参与输出',
+        action: (ed) => ed.insertAtCursor('// '),
+      },
+      {
+        label: '~ let 变量 = 值',
+        description: '声明全局变量（放在第一个 ## 之前）或场景变量',
+        action: (ed) => ed.insertAtCursor('~ let gold = 10\n'),
+      },
+      {
+        label: '~ 赋值',
+        description: '进入场景时执行的赋值语句',
+        action: (ed) => ed.insertAtCursor('~ gold = gold + 1\n'),
+      },
+      {
+        label: '{变量} 插值',
+        description: '把 JS 表达式的值插入正文',
+        action: (ed) => ed.insertAtCursor('{gold}'),
+      },
+      {
+        label: '{cond ? "A" : "B"}',
+        description: '行内条件文本（JS 三元表达式）',
+        action: (ed) => ed.insertAtCursor('{gold >= 5 ? "富有" : "拮据"}'),
+      },
+      {
+        label: '>> {条件} 选项',
+        description: '条件选项：条件为假时隐藏',
+        action: (ed) => ed.insertAtCursor('\n>> {gold >= 5} 买下它 -> shop\n'),
+      },
+      {
+        label: '>> (标签) 选项',
+        description: '选项标签：自动计数选中次数，条件/插值中用 {标签} 读取',
+        action: (ed) => ed.insertAtCursor('\n>> (greet) 问候他\n> "你好。"\n'),
+      },
+      {
+        label: '{seq:A|B|C}',
+        description: '依次推进，停在最后一项（按场景访问次数）',
+        action: (ed) => ed.insertAtCursor('{seq:第一次。|第二次。|之后都是这句。}'),
+      },
+      {
+        label: '{cycle:A|B|C}',
+        description: '循环轮换',
+        action: (ed) => ed.insertAtCursor('{cycle:白天。|黄昏。|夜晚。}'),
+      },
+      {
+        label: '{once:A|B}',
+        description: '依次输出，用完为空',
+        action: (ed) => ed.insertAtCursor('{once:只在第一次显示。|只在第二次显示。}'),
+      },
+      {
+        label: '{shuffle:A|B|C}',
+        description: '每次访问随机取一项（确定性随机）',
+        action: (ed) => ed.insertAtCursor('{shuffle:选项甲。|选项乙。|选项丙。}'),
+      },
+      {
+        label: '@if / @else 条件段',
+        description: '条件为真才追加的叙事段（体用 > 层级）',
+        action: (ed) => ed.insertAtCursor('\n@if {gold >= 5}\n> 条件为真时显示。\n@else\n> 否则显示这句。\n'),
+      },
+      {
+        label: '选项分支体',
+        description: '选中后追加局部叙事，之后汇合（调查循环）',
+        action: (ed) => ed.insertAtCursor('\n* 凑近细看\n> 选中后追加的文字。\n> 可以多行。\n>> 继续 -> next_scene\n'),
+      },
+      {
+        label: '<> 粘连',
+        description: '行尾粘连：下一句不换行直接接上',
+        action: (ed) => ed.insertAtCursor('<>'),
       },
     ],
   },

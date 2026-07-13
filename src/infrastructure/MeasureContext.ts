@@ -10,12 +10,23 @@ class MeasureContextSingleton {
   private ctx: OffscreenCanvasRenderingContext2D;
 
   constructor() {
-    this.canvas = new OffscreenCanvas(1, 1);
-    const ctx = this.canvas.getContext('2d');
-    if (!ctx) {
-      throw new Error('MeasureContext: 无法创建 OffscreenCanvas 2D 上下文');
+    try {
+      this.canvas = new OffscreenCanvas(1, 1);
+      const ctx = this.canvas.getContext('2d');
+      if (!ctx) throw new Error('no 2d');
+      this.ctx = ctx;
+    } catch {
+      // 回退：部分 WebView / 老浏览器不支持 OffscreenCanvas（bug B7）
+      const canvas = document.createElement('canvas');
+      canvas.width = 1;
+      canvas.height = 1;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        throw new Error('MeasureContext: 无法创建 2D 测量上下文');
+      }
+      this.canvas = canvas as unknown as OffscreenCanvas;
+      this.ctx = ctx as unknown as OffscreenCanvasRenderingContext2D;
     }
-    this.ctx = ctx;
   }
 
   /**

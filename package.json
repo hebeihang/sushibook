@@ -1,12 +1,16 @@
 {
   "name": "sushibook",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview"
+    "dev": "npm run build:player && vite",
+    "build": "tsc && npm run build:player && vite build",
+    "build:player": "vite build -c vite.player.config.ts && node scripts/copy-player.mjs",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "typescript": "~6.0.2",
@@ -15,16 +19,12 @@
   },
   "dependencies": {
     "@chenglou/pretext": "^0.0.6",
-    "@codemirror/autocomplete": "^6.20.1",
     "@codemirror/commands": "^6.10.3",
-    "@codemirror/lang-markdown": "^6.5.0",
     "@codemirror/language": "^6.12.3",
     "@codemirror/search": "^6.7.0",
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.41.1",
     "@lezer/highlight": "^1.2.3",
-    "@types/p5": "^1.7.7",
-    "inkjs": "^2.4.0",
     "mitt": "^3.0.1",
     "p5": "^2.2.3",
     "zustand": "^5.0.12"

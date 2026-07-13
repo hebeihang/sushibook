@@ -1,12 +1,25 @@
+// SushiBook 演示故事：文字的海洋
+// 序言区（第一个 ## 之前）：~ 声明全局变量
+~ let lantern = false
+~ let depth = 0
+~ let deciphered = false
+~ let peeked = false
+
 ## start
 ---
 mood: default
 enter: fade-in
 ---
+@bg_show("linear-gradient(180deg, #0b1026, #05070f)")
 在一片无边的数字海洋中，文字不再是静止的符号。{typewriter: 60ms}
-它们像[[鱼群]]{enter: swim}一样游动，像[[星辰]]一样呼吸。
-每一个字符都拥有自己的灵魂。{pause: 800}
+它们像[[鱼群]]{enter: swim}一样游动，像[[星辰]]{enter: sparkle}一样呼吸。
+{seq:每一个字符都拥有自己的灵魂。|你又回到了这片海。字群认出了你，纷纷聚拢过来。|海记得每一位访客，字群提着灯为你引路。}
+{cycle:潮水轻拍着栈桥。|远处传来一声汽笛。|一只字鸥掠过头顶。}
 
+* 拾起栈桥边发光的灯笼
+> 你拾起了那盏[[以太灯笼|由发光文字编成的灯]]{enter: flare, color: #ffd76c}。
+> ~ lantern = true
+> 灯光扫过之处，看不见的字迹一行行显形。
 >> 探索深海 -> ocean
 >> 仰望星空 -> sky
 
@@ -16,55 +29,94 @@ mood: float
 enter: dissolve
 speed: slow
 ---
+@bg_show("linear-gradient(180deg, #04263a, #020c14)")
+~ depth = depth + 1
 你潜入了[[深海]]{enter: sink}。{typewriter: 80ms}
-水波荡漾，文字在洋流中缓缓漂移。
-每一笔每一划都随着潮汐起伏，仿佛回到了[[文字|人类最古老的符号]]诞生的最初。{pause: 600}
-
->> 继续深潜 -> abyss
+水波荡漾，文字在洋流中缓缓漂移。这是你第{depth}次下潜。
+{shuffle:一串气泡字从身边升起。|远处游过一队发光的省略号。|某个古老的词在暗流里一闪而过。}
+>> {lantern} 举起灯笼照亮沟壑 -> abyss
+>> {!lantern} 黑暗中摸索前行 -> lost
 >> 浮出水面 -> surface
+
+## lost
+---
+mood: tense
+---
+没有光，[[黑暗]]{color: #7a7a90}浓得化不开。{typewriter: 100ms}
+你分不清上下，只能退回来路。
+（岸边似乎有什么发光的东西……）
+>> 退回岸边 -> start
 
 ## abyss
 ---
 mood: tense
 enter: dissolve
 ---
-[[深渊]]{color: #ff6b6b}之中，光线逐渐消失。{typewriter: 100ms}
-文字在黑暗里震颤，仿佛有某种力量在拉扯它们。{pause: 400}
-你感到一股无形的压力正在从四面八方挤压而来。
+@bg_show("linear-gradient(180deg, #1a0a12, #050308)")
+// 每次进入本场景重置「本次已细看」标记 → 粘性选项实现每次到访限一次
+~ peeked = false
+灯光落进[[深渊]]{color: #ff6b6b}，照出沟底一行古字。{typewriter: 100ms}
 
->> 回到起点 -> start
+>> {!deciphered && !peeked} 凑近细看
+> ~ peeked = true
+> 你屏住呼吸，一个字一个字地辨认。
+> @if {depth >= 2}
+> > 你潜得够深，耳膜适应了水压，终于读懂了它：「回去吧，把故事讲给别人听。」
+> > ~ deciphered = true
+> @else
+> > 字迹在水流里晃动，你只认出一半——也许潜得更深些再来。
+* 伸手触碰
+> 指尖刚触到石面，整行古字忽然亮起<>
+> ，又缓缓熄灭，像一次深海的呼吸。
+>> {deciphered} 抄下古字，浮上水面 -> ending
+>> 再潜一次 -> ocean
+>> 浮出水面 -> surface
 
 ## surface
 ---
 mood: default
 enter: fade-in
 ---
+@bg_show("linear-gradient(180deg, #12365a, #0b1a2a)")
 你浮出了水面。{typewriter: 60ms}
 阳光洒在字里行间，温暖而平静。
 [[文字]]在光芒中缓缓排列，重新找到了属于自己的位置。
-
->> 回到起点 -> start
+>> 回到岸边 -> start
 
 ## sky
 ---
 mood: float
-enter: dissolve
+enter: typewriter
 ---
+@bg_show("linear-gradient(180deg, #050514, #10102e)")
 你仰望[[星空]]{enter: sparkle}。{typewriter: 60ms}
 文字化作点点星光，在夜幕中闪烁。
-每一颗[[字星|由文字凝聚的星辰]]都在轻轻摇曳，编织着古老的传说。{pause: 800}
-
+每一颗[[字星|由文字凝聚的星辰]]{relation: item}都在轻轻摇曳，编织着古老的传说。{pause: 800}
 >> 进入星云 -> nebula
 >> 回到地面 -> start
 
 ## nebula
 ---
-mood: tense
+mood: storm
 enter: dissolve
 speed: slow
 ---
 [[星云]]{color: #6c5ce7}深处暗流涌动。{typewriter: 120ms}
-文字被[[引力]]{enter: pull, relation: force}撕扯，字形扭曲变形。{pause: 600}
+文字被[[引力|无形的宇宙之力]]{enter: pull}撕扯，字形扭曲变形。{pause: 600}
 宇宙的力量让一切都在颤抖，但美丽依然在混沌中绽放。
-
 >> 回到起点 -> start
+
+## ending
+---
+mood: float
+---
+@bg_show("linear-gradient(180deg, #1d2a44, #0d1526)")
+你带着那行古字回到岸上。{typewriter: 80ms}
+{lantern ? "灯笼的光渐渐融进晨光里。" : "晨光洒满栈桥。"}
+-> 尾声
+
+### 尾声
+故事在这里合上，但海不会忘记你第{depth}次下潜时的样子。
+「回去吧，」你轻声念着那行字<>
+——「把故事讲给别人听。」
+>> 合上书页 -> END

@@ -1,325 +1,324 @@
 /**
- * Sushibook 主入口 — 编辑器版
+ * SushiBook Studio 主入口
  *
- * 启动流程：字体 → 渲染器 → CodeMirror 编辑器 → 指令面板 → 事件管线
+ * 三栏布局（Kiny Editor 风格）：
+ *   左：资产管理 + 节点大纲
+ *   中：SushiML 编辑器 + 问题面板
+ *   右：粒子预览 + 指令面板
+ *
+ * 数据流：
+ *   EditorPanel (.sushi 源文本)
+ *     → SushiMLStoryManager.reload()/advance()   [解析 + 执行引擎]
+ *     → emitter: sushi:sceneData + story:stateChange (+ host:command)
+ *     → rebuildLayout(): LayoutEngine.buildLayoutSnapshot()
+ *     → emitter: layout:snapshotUpdate
+ *     → Renderer.updateSnapshot()  [同场景追加复用 / 跨场景溶解重建]
  */
 
 import './style.css';
 import { loadFont, FONT_CONFIG } from './infrastructure/FontLoader';
-import { Renderer } from './render/Renderer';
-import { LayoutEngine } from './core/LayoutEngine';
 import { SushiMLStoryManager } from './sushiml/bridge';
-import type { SceneRenderData } from './sushiml/bridge';
+import { LayoutEngine } from './core/LayoutEngine';
+import { Renderer } from './render/Renderer';
 import { emitter, debounce } from './core/EventBus';
-import { gameStore } from './store/gameStore';
-import type { StateChangeEvent } from './types/ink';
-import type { LayoutSnapshot, GlyphData } from './types/layout';
-import { SYSTEM_PROMPT } from './ai/systemPrompt';
-import { loadAIConfig, saveAIConfig, generateStory } from './ai/aiService';
-import { applyEffectRules } from './ai/effectRules';
 import { EditorPanel } from './editor/EditorPanel';
 import { DirectivePanel } from './editor/DirectivePanel';
-import demoSushiUrl from './stories/demo.sushi?url';
+import { ChoiceUI } from './ui/ChoiceUI';
+import { AIPanel } from './ui/AIPanel';
+import { HostEffects } from './ui/HostEffects';
+import { OutlinePanel } from './ui/OutlinePanel';
+import { GlossaryPanel } from './ui/GlossaryPanel';
+import { AssetPanel } from './ui/AssetPanel';
+import { ProblemsPanel, type Problem } from './ui/ProblemsPanel';
+import { gameStore } from './store/gameStore';
+import { buildStandaloneHtml } from './player/exportHtml';
+import demoSource from './stories/demo.sushi?raw';
 
 // ============================================================
-// DOM 引用
+// DOM 工具
 // ============================================================
-const loadingScreen = document.getElementById('loading-screen')!;
-const canvasContainer = document.getElementById('canvas-container')!;
-const choicesContainer = document.getElementById('choices-container')!;
-const sceneTitle = document.getElementById('scene-title')!;
-const moodIndicator = document.getElementById('mood-indicator')!;
-const moodLabel = moodIndicator.querySelector('.mood-label')!;
-const editorContainer = document.getElementById('editor-container')!;
-const directivePanelEl = document.getElementById('directive-panel')!;
-const editorApplyBtn = document.getElementById('editor-apply-btn')!;
-const splitHandle = document.getElementById('split-handle')!;
-const editorArea = document.getElementById('editor-area')!;
 
-// AI 面板
-const aiFab = document.getElementById('ai-fab')!;
-const aiPanel = document.getElementById('ai-panel')!;
-const aiCloseBtn = document.getElementById('ai-close-btn')!;
-const aiPromptInput = document.getElementById('ai-prompt') as HTMLTextAreaElement;
-const aiGenerateBtn = document.getElementById('ai-generate-btn')!;
-const aiBtnText = aiGenerateBtn.querySelector('.ai-btn-text')!;
-const aiBtnLoading = aiGenerateBtn.querySelector('.ai-btn-loading')! as HTMLElement;
-const aiSettingsToggle = document.getElementById('ai-settings-toggle')!;
-const aiSettingsDiv = document.getElementById('ai-settings')!;
-const aiEndpoint = document.getElementById('ai-endpoint') as HTMLInputElement;
-const aiApikey = document.getElementById('ai-apikey') as HTMLInputElement;
-const aiModel = document.getElementById('ai-model') as HTMLInputElement;
-const aiStatus = document.getElementById('ai-status')!;
+function $(id: string): HTMLElement {
+  const el = document.getElementById(id);
+  if (!el) throw new Error(`缺少 DOM 元素: #${id}`);
+  return el;
+}
 
-// ============================================================
-// 全局引用
-// ============================================================
-let renderer: Renderer;
-let storyManager: SushiMLStoryManager;
-let currentSceneData: SceneRenderData | null = null;
-let editorPanel: EditorPanel;
-let directivePanel: DirectivePanel;
-
-// ============================================================
-// 启动流程
-// ============================================================
-async function boot(): Promise<void> {
-  console.log('🍣 Sushibook 编辑器启动...');
-
-  const fontFamily = await loadFont();
-  gameStore.getState().setFontFamily(fontFamily);
-
-  // 渲染器
-  renderer = new Renderer(canvasContainer);
-
-  // 加载演示故事
-  const demoSource = await fetch(demoSushiUrl).then((r) => r.text());
-
-  // 编辑器
-  editorPanel = new EditorPanel(editorContainer, demoSource, (content) => {
-    // 自动应用：编辑内容变化时 debounce 后自动渲染
-    applyEditorContent(content);
-  });
-
-  // 指令面板
-  directivePanel = new DirectivePanel(directivePanelEl);
-  directivePanel.setEditor(editorPanel);
-
-  // 事件管线
-  connectPipeline();
-  initAIPanel();
-  initSplitHandle();
-
-  // 手动应用按钮
-  editorApplyBtn.addEventListener('click', () => {
-    applyEditorContent(editorPanel.getContent());
-  });
-
-  // 隐藏加载屏幕
-  loadingScreen.classList.add('hidden');
-  setTimeout(() => { loadingScreen.style.display = 'none'; }, 600);
-
-  // 初始加载
-  setTimeout(() => {
-    applyEditorContent(demoSource);
-  }, 400);
+/** 初始化致命错误横幅（正常运行期问题走问题面板） */
+function showFatal(message: string): void {
+  const banner = document.getElementById('error-banner');
+  if (!banner) {
+    console.error(message);
+    return;
+  }
+  banner.textContent = message;
+  banner.classList.add('visible');
 }
 
 // ============================================================
-// 编辑器内容应用
+// 应用初始化
 // ============================================================
-function applyEditorContent(rawSource: string): void {
+
+async function init(): Promise<void> {
+  // 1. 字体门控：Pretext 测量前必须完成加载，否则坐标错位
+  const family = await loadFont();
+  gameStore.getState().setFontFamily(family);
+  const cssFont = `${FONT_CONFIG.size}px "${family}"`;
+
+  // 2. 叙事管理器
+  const storyManager = new SushiMLStoryManager(demoSource);
+
+  // 3. 渲染器 + 宿主效果（@bg_show / @bgm_play）
+  const previewCanvas = $('preview-canvas');
+  const renderer = new Renderer(previewCanvas);
+  new HostEffects($('preview-bg'));
+
+  // 4. 问题面板 + 节点大纲
+  const problemsPanel = new ProblemsPanel($('problems-list'), $('problems-status'), $('status-chip'));
+
+  // 5. 排版重建：叙事状态 → LayoutSnapshot
+  function rebuildLayout(): void {
+    const data = storyManager.getCurrentRenderData();
+    if (!data) return;
+    const snapshot = LayoutEngine.buildLayoutSnapshot(
+      data.plainText,
+      cssFont,
+      renderer.renderWidth,
+      FONT_CONFIG.lineHeight,
+      data.sceneId,
+      data.sceneDirectives.mood || 'default',
+      data.charMeta
+    );
+    emitter.emit('layout:snapshotUpdate', snapshot);
+  }
+
+  // 6. 静态校验 → 问题面板
+  function validate(): void {
+    const problems: Problem[] = [];
+    for (const d of storyManager.validateLinks()) {
+      problems.push({ severity: 'error', message: `选项指向不存在的场景: ${d.scene} → ${d.target}` });
+    }
+    for (const id of storyManager.deadEndScenes()) {
+      problems.push({ severity: 'warning', message: `死胡同场景「${id}」：既无跳转也无选项，到达即卡死` });
+    }
+    for (const id of storyManager.stickyDeadEnds()) {
+      problems.push({ severity: 'warning', message: `粘性死循环「${id}」：选项无目标也无内容，选中后无进展` });
+    }
+    for (const id of storyManager.onceOnlyDeadEnds()) {
+      problems.push({ severity: 'warning', message: `一次性死胡同「${id}」：唯一出口是 * once 选项，选完即卡死` });
+    }
+    problemsPanel.set(problems);
+  }
+
+  // 7. 编辑器 + 指令面板 + 资产 + 大纲
+  // B12 缓解：相同 source 去重，避免重复全量 reload + 粒子重排
+  let lastAppliedSource = '';
+  const applySource = (source: string): void => {
+    if (source === lastAppliedSource) return;
+    lastAppliedSource = source;
+    try {
+      storyManager.reload(source);
+      validate();
+      refreshOutline();
+      storyManager.advance();
+    } catch (err) {
+      problemsPanel.set([{
+        severity: 'error',
+        message: `解析失败：${err instanceof Error ? err.message : String(err)}`,
+      }]);
+    }
+  };
+
+  /** 选项/键盘/大纲导航的统一兜底 */
+  const safeRun = (fn: () => void): void => {
+    try {
+      fn();
+    } catch (err) {
+      problemsPanel.pushRuntime(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const editor = new EditorPanel($('editor-mount'), demoSource, (content) => {
+    applySource(content);
+  });
+
+  const directivePanel = new DirectivePanel($('directive-panel'));
+  directivePanel.setEditor(editor);
+
+  new AssetPanel($('asset-list'), $('btn-asset-add'), (snippet) => {
+    editor.insertAtCursor(snippet);
+  });
+
+  const outline = new OutlinePanel($('outline-list'), $('outline-count'), (sceneId) => {
+    editor.revealScene(sceneId);
+    safeRun(() => storyManager.gotoScene(sceneId));
+  });
+
+  function refreshOutline(): void {
+    const stats = storyManager.linkStats();
+    outline.update(
+      storyManager.sceneIds.map((id) => ({ id, incoming: stats.get(id) ?? 0 }))
+    );
+  }
+
+  // 词汇表：消费 SceneRenderData.marks（B3 修复）
+  const glossary = new GlossaryPanel($('glossary-list'), $('glossary-count'), (sceneId) => {
+    editor.revealScene(sceneId);
+    safeRun(() => storyManager.gotoScene(sceneId));
+  });
+  emitter.on('sushi:sceneData', (data) => glossary.update(data));
+
+  $('btn-apply').addEventListener('click', () => applySource(editor.getContent()));
+  $('btn-restart').addEventListener('click', () => safeRun(() => storyManager.restart()));
+  $('btn-export').addEventListener('click', () => void exportHtml5(editor.getContent()));
+
+  // 8. 状态联动：徽标 + 大纲高亮 + 排版重建
+  emitter.on('story:stateChange', ({ state }) => {
+    rebuildLayout();
+    $('badge-scene').textContent = state.sceneId.toUpperCase();
+    $('badge-mood').textContent = state.mood;
+    outline.setCurrent(state.sceneId);
+  });
+
+  emitter.on('system:resize', debounce(() => rebuildLayout(), 150));
+
+  // 9. 选项 UI
+  new ChoiceUI($('preview-choices'), (index) => safeRun(() => storyManager.selectChoice(index)));
+
+  // 10. AI 生成
+  const aiPanel = new AIPanel((generated) => {
+    editor.setContent(generated);
+    applySource(generated);
+  });
+  $('btn-ai').addEventListener('click', () => aiPanel.open());
+
+  // 11. 键盘交互（编辑器内输入不拦截）
+  window.addEventListener('keydown', (e) => {
+    const inEditor = (e.target as HTMLElement)?.closest?.('.cm-editor, textarea, input');
+
+    // Ctrl/Cmd + Enter：任何位置都可应用
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      applySource(editor.getContent());
+      return;
+    }
+    if (inEditor) return;
+
+    // Space / Enter：重播当前场景
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      safeRun(() => storyManager.advance());
+      return;
+    }
+    // 数字键 1-9：选择分支
+    const num = parseInt(e.key, 10);
+    if (num >= 1 && num <= 9) {
+      const choices = gameStore.getState().story.choices;
+      if (num <= choices.length) {
+        safeRun(() => storyManager.selectChoice(num - 1));
+      }
+    }
+  }, { capture: true });
+
+  // 12. 分栏拖拽
+  initSplitBar(renderer);
+
+  // 13. 触摸支持：点按预览区重播当前场景
+  previewCanvas.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    safeRun(() => storyManager.advance());
+  });
+
+  // 14. 首次渲染
+  validate();
+  refreshOutline();
+  storyManager.advance();
+  gameStore.getState().setReady(true);
+}
+
+// ============================================================
+// 导出 HTML5（自包含单文件）
+// ============================================================
+
+/** 把当前故事导出为可双击独立打开的网页版电子书 */
+async function exportHtml5(source: string): Promise<void> {
   try {
-    // 注入效果轨
-    const enriched = applyEffectRules(rawSource);
-    storyManager = new SushiMLStoryManager(enriched);
-    console.log(`📖 故事已加载：${storyManager.sceneIds.length} 个场景`);
-    storyManager.advance();
-    gameStore.getState().setReady(true);
+    const resp = await fetch('player-template.html');
+    if (!resp.ok) throw new Error('导出模板缺失，请先运行 npm run build:player');
+    const template = await resp.text();
+    const html = buildStandaloneHtml(template, source);
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'sushibook-story.html';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast('已导出 HTML5 网页（可双击独立打开）');
   } catch (err) {
-    console.warn('⚠️ SushiML 解析失败:', err);
+    console.error(err);
+    toast(`导出失败：${err instanceof Error ? err.message : String(err)}`, true);
   }
 }
 
-// ============================================================
-// 事件管线
-// ============================================================
-function connectPipeline(): void {
-  emitter.on('sushi:sceneData', (data) => {
-    currentSceneData = data;
-  });
-
-  const debouncedLayout = debounce((event: StateChangeEvent) => {
-    const { state } = event;
-    const fontFamily = gameStore.getState().fontFamily;
-    const font = `${FONT_CONFIG.size}px "${fontFamily}"`;
-
-    const snapshot = LayoutEngine.buildLayoutSnapshot(
-      state.currentText, font, renderer.renderWidth,
-      FONT_CONFIG.lineHeight, state.sceneId, state.mood
-    );
-
-    if (currentSceneData) annotateSnapshot(snapshot, currentSceneData);
-    emitter.emit('layout:snapshotUpdate', snapshot);
-    updateUI(state.sceneId, state.mood, state.choices);
-  }, 50);
-
-  emitter.on('ink:stateChange', debouncedLayout);
-
-  emitter.on('system:resize', () => {
-    const ink = gameStore.getState().ink;
-    if (!ink.currentText) return;
-    const fontFamily = gameStore.getState().fontFamily;
-    const font = `${FONT_CONFIG.size}px "${fontFamily}"`;
-    const snapshot = LayoutEngine.buildLayoutSnapshot(
-      ink.currentText, font, renderer.renderWidth,
-      FONT_CONFIG.lineHeight, ink.sceneId, ink.mood
-    );
-    if (currentSceneData) annotateSnapshot(snapshot, currentSceneData);
-    emitter.emit('layout:snapshotUpdate', snapshot);
-  });
-}
-
-// ============================================================
-// SushiML 元数据标注
-// ============================================================
-function annotateSnapshot(snapshot: LayoutSnapshot, sceneData: SceneRenderData): void {
-  const allGlyphs: GlyphData[] = snapshot.lines.flatMap((l) => l.glyphs);
-  const { charMeta } = sceneData;
-  for (let i = 0; i < allGlyphs.length && i < charMeta.length; i++) {
-    allGlyphs[i].sentenceIndex = charMeta[i].sentenceIndex;
-    allGlyphs[i].isMarked = charMeta[i].isMarked;
-    if (charMeta[i].markIndex !== undefined) allGlyphs[i].markIndex = charMeta[i].markIndex;
-    if (charMeta[i].wordColor) allGlyphs[i].wordColor = charMeta[i].wordColor;
-    if (charMeta[i].enterEffect) allGlyphs[i].enterEffect = charMeta[i].enterEffect;
-    if (charMeta[i].annotation) allGlyphs[i].annotation = charMeta[i].annotation;
-  }
-}
-
-// ============================================================
-// UI 更新
-// ============================================================
-function updateUI(scene: string, mood: string, choices: Array<{ index: number; text: string }>): void {
-  sceneTitle.textContent = scene.toUpperCase();
-  moodIndicator.setAttribute('data-mood', mood);
-  moodLabel.textContent = mood.toUpperCase();
-
-  choicesContainer.innerHTML = '';
-  choices.forEach((choice) => {
-    const btn = document.createElement('button');
-    btn.className = 'choice-btn';
-    btn.id = `choice-${choice.index}`;
-    btn.innerHTML = `<span>${choice.text}</span>`;
-    btn.addEventListener('click', () => storyManager.selectChoice(choice.index));
-    choicesContainer.appendChild(btn);
-  });
+/** 轻量提示条 */
+function toast(message: string, isError = false): void {
+  const el = document.createElement('div');
+  el.className = 'toast' + (isError ? ' toast-err' : '');
+  el.textContent = message;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('toast-show'));
+  setTimeout(() => {
+    el.classList.remove('toast-show');
+    setTimeout(() => el.remove(), 320);
+  }, 2600);
 }
 
 // ============================================================
 // 分栏拖拽
 // ============================================================
-function initSplitHandle(): void {
-  let isDragging = false;
 
-  splitHandle.addEventListener('mousedown', (e) => {
-    isDragging = true;
-    splitHandle.classList.add('dragging');
+function initSplitBar(renderer: Renderer): void {
+  const bar = $('split-bar');
+  const editorPane = $('editor-pane');
+  let dragging = false;
+
+  const syncCanvas = debounce(() => renderer.resizeToContainer(), 100);
+
+  bar.addEventListener('mousedown', (e) => {
     e.preventDefault();
+    dragging = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
   });
-
-  document.addEventListener('mousemove', (e) => {
-    if (!isDragging) return;
-    const appWidth = document.getElementById('app')!.clientWidth;
-    const pct = Math.min(65, Math.max(20, (e.clientX / appWidth) * 100));
-    editorArea.style.width = `${pct}%`;
-    // 触发预览区 resize
-    emitter.emit('system:resize', {
-      width: canvasContainer.clientWidth,
-      height: canvasContainer.clientHeight,
-    });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const sidebarWidth = document.getElementById('sidebar')?.clientWidth ?? 0;
+    const pct = ((e.clientX - sidebarWidth) / (window.innerWidth - sidebarWidth)) * 100;
+    editorPane.style.width = `${Math.min(Math.max(pct, 20), 70)}%`;
+    syncCanvas();
   });
-
-  document.addEventListener('mouseup', () => {
-    if (isDragging) {
-      isDragging = false;
-      splitHandle.classList.remove('dragging');
-    }
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    renderer.resizeToContainer();
   });
 }
 
 // ============================================================
-// AI 面板
+// 启动
 // ============================================================
-function initAIPanel(): void {
-  const config = loadAIConfig();
-  aiEndpoint.value = config.endpoint;
-  aiApikey.value = config.apiKey;
-  aiModel.value = config.model;
 
-  aiFab.addEventListener('click', () => {
-    aiPanel.classList.add('open');
-    aiPromptInput.focus();
+init()
+  .catch((err) => {
+    console.error('初始化失败:', err);
+    showFatal(`初始化失败：${err instanceof Error ? err.message : String(err)}`);
+  })
+  .finally(() => {
+    document.getElementById('loading-screen')?.classList.add('hidden');
   });
-
-  aiCloseBtn.addEventListener('click', closeAIPanel);
-
-  aiSettingsToggle.addEventListener('click', () => {
-    const hidden = aiSettingsDiv.style.display === 'none';
-    aiSettingsDiv.style.display = hidden ? 'flex' : 'none';
-  });
-
-  aiGenerateBtn.addEventListener('click', handleGenerate);
-
-  aiPromptInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleGenerate();
-    }
-  });
-}
-
-function closeAIPanel(): void {
-  aiPanel.classList.remove('open');
-}
-
-async function handleGenerate(): Promise<void> {
-  const prompt = aiPromptInput.value.trim();
-  if (!prompt) { setStatus('请输入故事描述', 'error'); return; }
-
-  const config = {
-    endpoint: aiEndpoint.value.trim(),
-    apiKey: aiApikey.value.trim(),
-    model: aiModel.value.trim(),
-  };
-  saveAIConfig(config);
-
-  if (!config.apiKey) {
-    setStatus('请先在设置中填写 API Key', 'error');
-    aiSettingsDiv.style.display = 'flex';
-    return;
-  }
-
-  aiGenerateBtn.setAttribute('disabled', 'true');
-  aiBtnText.style.display = 'none';
-  aiBtnLoading.style.display = '';
-  setStatus('正在生成故事...', '');
-
-  try {
-    const rawSushiML = await generateStory(prompt, config, SYSTEM_PROMPT);
-    console.log('🤖 AI 原始输出:\n', rawSushiML);
-
-    setStatus('✅ 生成完成！', 'success');
-    await delay(400);
-
-    // 写入编辑器（用户可继续编辑）
-    editorPanel.setContent(rawSushiML);
-
-    // 应用到预览
-    applyEditorContent(rawSushiML);
-
-    closeAIPanel();
-    setStatus('', '');
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    setStatus(`❌ ${msg}`, 'error');
-    console.error('AI 生成失败:', err);
-  } finally {
-    aiGenerateBtn.removeAttribute('disabled');
-    aiBtnText.style.display = '';
-    aiBtnLoading.style.display = 'none';
-  }
-}
-
-function setStatus(text: string, type: string): void {
-  aiStatus.textContent = text;
-  aiStatus.className = 'ai-status' + (type ? ` ${type}` : '');
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-// ============================================================
-// 启动！
-// ============================================================
-boot().catch(console.error);

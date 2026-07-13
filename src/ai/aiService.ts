@@ -32,39 +32,54 @@ export function saveAIConfig(config: AIConfig): void {
 export async function generateStory(
   prompt: string,
   config: AIConfig,
-  systemPrompt: string
+  systemPrompt: string,
+  options?: { signal?: AbortSignal; timeoutMs?: number }
 ): Promise<string> {
   if (!config.apiKey) {
     throw new Error('请先设置 API Key');
   }
 
-  const response = await fetch(config.endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.85,
-      max_tokens: 4000,
-    }),
-  });
-
-  if (!response.ok) {
-    const errBody = await response.text().catch(() => '');
-    throw new Error(`API 错误 ${response.status}: ${errBody.slice(0, 200)}`);
+  // B16：用 AbortController 合并「外部取消」与「超时」，避免长生成期间网络挂起一直转
+  const controller = new AbortController();
+  const timeoutMs = options?.timeoutMs ?? 90000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (options?.signal) {
+    if (options.signal.aborted) controller.abort();
+    else options.signal.addEventListener('abort', () => controller.abort(), { once: true });
   }
 
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error('API 返回内容为空');
+  try {
+    const response = await fetch(config.endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.85,
+        max_tokens: 4000,
+      }),
+      signal: controller.signal,
+    });
 
-  return cleanOutput(content);
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => '');
+      throw new Error(`API 错误 ${response.status}: ${errBody.slice(0, 200)}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) throw new Error('API 返回内容为空');
+
+    return cleanOutput(content);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** 清理 AI 输出：去掉 markdown 代码围栏 */

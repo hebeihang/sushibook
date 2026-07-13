@@ -2,23 +2,37 @@ import p5 from 'p5';
 import { Particle } from './Particle';
 import { emitter } from '../core/EventBus';
 import { FONT_CONFIG } from '../infrastructure/FontLoader';
+import { gameStore } from '../store/gameStore';
 import type { LayoutSnapshot, GlyphData } from '../types/layout';
-import type { MoodType } from '../types/particle';
 import type { SceneRenderData } from '../sushiml/bridge';
 import type { SentenceDirectives } from '../sushiml/types';
+import {
+  MoodEffects,
+  WordStateEffects,
+  WordEnterEffects,
+  combineOffsets,
+  ZERO_OFFSET,
+  type EffectContext,
+  type EffectOffset,
+} from './EffectLibrary';
 
 /**
  * p5.js 渲染器
- * 
+ *
  * 负责：
  * 1. 初始化 p5.js 实例模式
  * 2. 消费 LayoutSnapshot + SushiML 元数据
  * 3. typewriter + pause 时序控制
  * 4. 场景切换策略：同场景重排 vs 跨场景溶解-重生
+ *
+ * 粒子分两组管理，避免清理竞态：
+ * - active: 当前场景的粒子（索引与 glyph 一一对应，可复用）
+ * - dying:  上一场景正在淡出的粒子（淡完即删，删除只发生在 draw 循环）
  */
 export class Renderer {
   private p5Instance!: p5;
-  private particles: Particle[] = [];
+  private active: Particle[] = [];
+  private dying: Particle[] = [];
   private currentSnapshot: LayoutSnapshot | null = null;
   private dissolveTimer: ReturnType<typeof setTimeout> | null = null;
   private containerEl: HTMLElement;
@@ -47,13 +61,14 @@ export class Renderer {
     const sketch = (p: p5) => {
       p.setup = () => {
         const canvas = p.createCanvas(
-          this.containerEl.clientWidth,
-          this.containerEl.clientHeight
+          Math.max(this.containerEl.clientWidth, 1),
+          Math.max(this.containerEl.clientHeight, 1)
         );
         canvas.parent(this.containerEl);
 
-        // 字体配置必须与 MeasureContext 完全一致
-        p.textFont(FONT_CONFIG.family);
+        // 字体配置必须与 MeasureContext / LayoutEngine 完全一致
+        // （若字体加载失败回退，store 中存的是实际生效的字体族）
+        p.textFont(gameStore.getState().fontFamily || FONT_CONFIG.family);
         p.textSize(FONT_CONFIG.size);
         p.textAlign(p.LEFT, p.TOP);
 
@@ -61,33 +76,55 @@ export class Renderer {
       };
 
       p.draw = () => {
-        // 深色背景
-        p.background(12, 12, 18);
-
+        // 透明画布 + 半透明底色：让宿主背景层（@bg_show）透出
+        p.clear();
+        p.noStroke();
+        p.fill(12, 12, 18, 216);
+        p.rect(0, 0, p.width, p.height);
         this.noiseOffset += 0.01;
 
-        // 更新所有粒子
-        for (const particle of this.particles) {
+        const mood = this.currentSnapshot?.mood || 'default';
+        const moodFn = MoodEffects[mood];
+        const ctx: EffectContext = { p, idleAge: 0, noiseOffset: this.noiseOffset };
+
+        // 淡出中的旧粒子：只做物理更新
+        for (const particle of this.dying) {
           particle.update();
-
-          // 应用情绪力场
-          const mood = (this.currentSnapshot?.mood || 'default') as MoodType;
-          if (mood !== 'default') {
-            particle.applyMoodForce(mood, this.noiseOffset);
-          }
-
-          particle.display();
+          particle.render();
+        }
+        // 死亡清理只发生在这一处
+        if (this.dying.length > 0) {
+          this.dying = this.dying.filter((pt) => !pt.isDead);
         }
 
-        // 清理已死亡粒子
-        this.particles = this.particles.filter((p) => !p.isDead);
+        // 当前场景粒子
+        for (const particle of this.active) {
+          particle.update();
+
+          let offset: EffectOffset = ZERO_OFFSET;
+          if (particle.isIdle) {
+            ctx.idleAge = particle.idleAge;
+            // 词语级持续动效
+            const effectName = particle.wordStateEffect;
+            const wordFn = effectName ? WordStateEffects[effectName] : undefined;
+            if (wordFn) {
+              offset = wordFn(ctx, particle.anchorX, particle.anchorY);
+            }
+            // 场景情绪力场
+            if (moodFn) {
+              offset = combineOffsets(offset, moodFn(ctx, particle.anchorX, particle.anchorY));
+            }
+          }
+
+          particle.render(offset.dx, offset.dy, offset.alpha ?? 1);
+        }
 
         this.handleTooltip(p.mouseX, p.mouseY);
       };
 
       p.windowResized = () => {
-        const w = this.containerEl.clientWidth;
-        const h = this.containerEl.clientHeight;
+        const w = Math.max(this.containerEl.clientWidth, 1);
+        const h = Math.max(this.containerEl.clientHeight, 1);
         p.resizeCanvas(w, h);
         emitter.emit('system:resize', { width: w, height: h });
       };
@@ -104,10 +141,22 @@ export class Renderer {
       this.updateSnapshot(snapshot);
     });
 
-    // 接收 SushiML 场景渲染元数据
+    // 接收 SushiML 场景渲染元数据（必须先于 layout:snapshotUpdate 到达）
     emitter.on('sushi:sceneData', (data) => {
       this.currentSceneData = data;
     });
+  }
+
+  /**
+   * 手动触发 p5 resize（分栏拖拽时容器尺寸变化但 window 不变）
+   */
+  public resizeToContainer(): void {
+    const w = Math.max(this.containerEl.clientWidth, 1);
+    const h = Math.max(this.containerEl.clientHeight, 1);
+    if (w !== this.p5Instance.width || h !== this.p5Instance.height) {
+      this.p5Instance.resizeCanvas(w, h);
+      emitter.emit('system:resize', { width: w, height: h });
+    }
   }
 
   /**
@@ -116,11 +165,12 @@ export class Renderer {
    */
   public updateSnapshot(snapshot: LayoutSnapshot): void {
     const isSceneChange =
-      this.currentSnapshot !== null &&
+      this.currentSnapshot === null ||
       snapshot.sceneId !== this.currentSnapshot.sceneId;
 
     if (isSceneChange) {
-      this.dissolveAndRebuild(snapshot);
+      const { enter, speedScale } = this.getSceneTransition();
+      this.rebuildScene(snapshot, enter, speedScale);
     } else {
       this.reuseParticles(snapshot);
     }
@@ -129,109 +179,186 @@ export class Renderer {
   }
 
   /**
-   * 跨场景切换：溶解-重生
-   * 
-   * typewriter 效果在此生效：
-   * - 有 typewriter 指令的句子，字符按时序逐个出现
-   * - 有 pause 指令的句子，在前一句结束后等待指定时间
+   * 从当前场景指令推导过渡方式与速度倍率
+   * enter: fade-in | dissolve | typewriter（默认 dissolve）
+   * speed: slow | normal | fast（默认 normal → 1x）
    */
-  private dissolveAndRebuild(snapshot: LayoutSnapshot): void {
-    // 清除之前的计时器（竞态保护）
-    if (this.dissolveTimer !== null) {
-      clearTimeout(this.dissolveTimer);
-    }
-
-    // 所有旧粒子原地淡出
-    for (const particle of this.particles) {
-      particle.setTarget(particle.currentX, particle.currentY, 0);
-    }
-
-    // 延迟后重建
-    this.dissolveTimer = setTimeout(() => {
-      this.dissolveTimer = null;
-
-      // 清理已死亡粒子
-      this.particles = this.particles.filter((p) => !p.isDead);
-
-      // 用新 snapshot 重建
-      const allGlyphs = snapshot.lines.flatMap((l) => l.glyphs);
-
-      // 计算每个字符的出现延迟
-      const delays = this.computeGlyphDelays(allGlyphs);
-
-      this.particles = allGlyphs.map((glyph, i) => {
-        const tx = glyph.x + this.canvasPadding.x;
-        const ty = glyph.y + this.canvasPadding.y;
-
-        // typewriter 模式：在目标位置原地出现（不从远处飞入）
-        // 非 typewriter：从上方随机位置飞入
-        const hasDelay = delays[i] > 0;
-        const spawnX = hasDelay
-          ? tx
-          : tx + (Math.random() - 0.5) * 100;
-        const spawnY = hasDelay
-          ? ty
-          : -20 - Math.random() * 40;
-
-        const particle = new Particle(
-          this.p5Instance,
-          glyph.char,
-          spawnX,
-          spawnY
-        );
-        particle.setTarget(tx, ty, 255);
-
-        // 设置 typewriter 延迟
-        if (delays[i] > 0) {
-          particle.setAppearDelay(delays[i]);
-        }
-
-        // 设置词语级元数据（颜色 + 标记状态 + 动效 + 注释）
-        if (glyph.isMarked || glyph.wordColor || glyph.enterEffect || glyph.annotation) {
-          particle.setWordMeta(!!glyph.isMarked, glyph.wordColor, glyph.enterEffect, glyph.annotation);
-        }
-
-        return particle;
-      });
-    }, this.DISSOLVE_MS);
+  private getSceneTransition(): {
+    enter: 'dissolve' | 'fade-in' | 'typewriter';
+    speedScale: number;
+  } {
+    const dirs = this.currentSceneData?.sceneDirectives;
+    const enterRaw = (dirs?.enter ?? 'dissolve').toLowerCase();
+    const enter: 'dissolve' | 'fade-in' | 'typewriter' =
+      enterRaw === 'fade-in' || enterRaw === 'typewriter' ? enterRaw : 'dissolve';
+    const speedRaw = (dirs?.speed ?? 'normal').toLowerCase();
+    const speedScale = speedRaw === 'slow' ? 1.6 : speedRaw === 'fast' ? 0.6 : 1;
+    return { enter, speedScale };
   }
 
   /**
-   * 同场景重排：索引复用（resize 时触发）
+   * 跨场景切换：按场景 enter 指令选择过渡方式
+   * - dissolve（默认）：旧粒子淡出后，新粒子从上方飞入
+   * - fade-in：旧粒子淡出的同时，新粒子在目标位置交叉淡入
+   * - typewriter：新粒子按阅读顺序级联出现
+   * speed 通过 speedScale 调节过渡时长 / 级联间隔
+   */
+  private rebuildScene(
+    snapshot: LayoutSnapshot,
+    enter: 'dissolve' | 'fade-in' | 'typewriter',
+    speedScale: number
+  ): void {
+    // 竞态保护：取消上一次未完成的重建
+    if (this.dissolveTimer !== null) {
+      clearTimeout(this.dissolveTimer);
+      this.dissolveTimer = null;
+    }
+
+    // 当前粒子全部转入 dying 组，原地淡出
+    for (const particle of this.active) {
+      particle.setTarget(particle.currentX, particle.currentY, 0);
+      this.dying.push(particle);
+    }
+    this.active = [];
+
+    if (enter === 'dissolve') {
+      // 延迟后重建新场景粒子（等待旧粒子淡出）
+      const delay = Math.round(this.DISSOLVE_MS * speedScale);
+      this.dissolveTimer = setTimeout(() => {
+        this.dissolveTimer = null;
+        if (this.active.length === 0) {
+          this.active = this.buildParticles(snapshot, enter, speedScale);
+        }
+      }, delay);
+    } else {
+      // fade-in / typewriter：立即构建，与旧粒子交叉呈现
+      this.active = this.buildParticles(snapshot, enter, speedScale);
+    }
+  }
+
+  /**
+   * 同场景重排：索引复用（resize / 编辑微调 / 分支体追加时触发）
+   *
+   * 追加式推进支持：新增粒子应用 typewriter 时序（以首个新粒子的
+   * 理论延迟为基线归零，使追加块从点击瞬间开始打字）
    */
   private reuseParticles(snapshot: LayoutSnapshot): void {
     const allGlyphs: GlyphData[] = snapshot.lines.flatMap((l) => l.glyphs);
+    const prevCount = this.active.length;
+    const delays = this.computeGlyphDelays(allGlyphs);
+    const baseline = prevCount < delays.length ? delays[prevCount] : 0;
 
     for (let i = 0; i < allGlyphs.length; i++) {
       const glyph = allGlyphs[i];
       const tx = glyph.x + this.canvasPadding.x;
       const ty = glyph.y + this.canvasPadding.y;
 
-      if (this.particles[i]) {
-        // 索引复用，状态机保护 setChar
-        this.particles[i].setChar(glyph.char);
-        this.particles[i].setTarget(tx, ty, 255);
+      if (this.active[i]) {
+        // 索引复用，状态机保护 setChar；目标未变时不打扰 idle 状态
+        const particle = this.active[i];
+        particle.setChar(glyph.char);
+        if (particle.anchorX !== tx || particle.anchorY !== ty) {
+          particle.setTarget(tx, ty, 255);
+        }
+        this.applyWordMeta(particle, glyph);
       } else {
-        // 创建新粒子（新增的字符）
-        const particle = new Particle(
-          this.p5Instance,
-          glyph.char,
-          tx,
-          ty + 20
-        );
+        // 新增字符（分支体追加/编辑新增）
+        const appendDelay = Math.max(0, (delays[i] ?? 0) - baseline);
+        let spawnX = tx;
+        let spawnY = ty + 20;
+        const enterFn = glyph.enterEffect ? WordEnterEffects[glyph.enterEffect] : undefined;
+        if (enterFn) {
+          const spawn = enterFn(tx, ty);
+          spawnX = spawn.x;
+          spawnY = spawn.y;
+        } else if (appendDelay > 0) {
+          spawnX = tx;
+          spawnY = ty;
+        }
+        const particle = new Particle(this.p5Instance, glyph.char, spawnX, spawnY);
         particle.setTarget(tx, ty, 255);
-        this.particles.push(particle);
+        if (appendDelay > 0) {
+          particle.setAppearDelay(appendDelay);
+        }
+        this.applyWordMeta(particle, glyph);
+        this.active.push(particle);
       }
     }
 
-    // 多余粒子向中心汇聚并淡出
-    if (this.particles.length > allGlyphs.length) {
-      const centerX = this.p5Instance.width / 2;
-      const centerY = this.p5Instance.height / 2;
-      for (let i = allGlyphs.length; i < this.particles.length; i++) {
-        this.particles[i].setTarget(centerX, centerY, 0);
+    // 多余粒子转入 dying 组淡出
+    if (this.active.length > allGlyphs.length) {
+      const removed = this.active.splice(allGlyphs.length);
+      for (const particle of removed) {
+        particle.setTarget(particle.currentX, particle.currentY + 15, 0);
+        this.dying.push(particle);
       }
     }
+  }
+
+  /**
+   * 从快照构建整组新粒子（含入场动效和 typewriter 时序）
+   * @param enter 场景级过渡方式，决定出生位置与级联呈现
+   * @param speedScale 速度倍率，影响打字机级联间隔
+   */
+  private buildParticles(
+    snapshot: LayoutSnapshot,
+    enter: 'dissolve' | 'fade-in' | 'typewriter',
+    speedScale: number
+  ): Particle[] {
+    const allGlyphs = snapshot.lines.flatMap((l) => l.glyphs);
+    const delays = this.computeGlyphDelays(allGlyphs);
+    const sceneStagger = 28 * speedScale; // 场景级打字机每字间隔（ms）
+
+    return allGlyphs.map((glyph, i) => {
+      const tx = glyph.x + this.canvasPadding.x;
+      const ty = glyph.y + this.canvasPadding.y;
+
+      // 出生位置：词语入场动效 > 场景过渡策略
+      let spawnX = tx;
+      let spawnY = ty;
+      const enterFn = glyph.enterEffect ? WordEnterEffects[glyph.enterEffect] : undefined;
+      if (enterFn) {
+        // 词语级入场动效（作者显式指定）始终优先
+        const spawn = enterFn(tx, ty);
+        spawnX = spawn.x;
+        spawnY = spawn.y;
+      } else if (enter === 'dissolve') {
+        // 默认：非打字机字从上方飞入
+        if (delays[i] > 0) {
+          spawnX = tx;
+          spawnY = ty;
+        } else {
+          spawnX = tx + (Math.random() - 0.5) * 100;
+          spawnY = -20 - Math.random() * 40;
+        }
+      }
+      // fade-in / typewriter：已在目标位置（淡入 / 级联出现）
+
+      const particle = new Particle(this.p5Instance, glyph.char, spawnX, spawnY);
+      particle.setTarget(tx, ty, 255);
+
+      // 出现延迟：句子级指令 + 场景级打字机级联
+      let appear = delays[i];
+      if (enter === 'typewriter') {
+        appear = Math.max(appear, i * sceneStagger);
+      }
+      if (appear > 0) {
+        particle.setAppearDelay(appear);
+      }
+      this.applyWordMeta(particle, glyph);
+
+      return particle;
+    });
+  }
+
+  /** 应用词语级元数据 */
+  private applyWordMeta(particle: Particle, glyph: GlyphData): void {
+    particle.setWordMeta(
+      !!glyph.isMarked,
+      glyph.wordColor,
+      glyph.enterEffect,
+      glyph.annotation
+    );
   }
 
   // ============================================================
@@ -240,7 +367,7 @@ export class Renderer {
 
   /**
    * 计算每个 glyph 的出现延迟（ms）
-   * 
+   *
    * 时序模型：
    *   句子 0: {typewriter: 60ms}
    *     → char[0] at T+0, char[1] at T+60, char[2] at T+120 ...
@@ -265,10 +392,10 @@ export class Renderer {
     );
     if (!hasAnyTiming) return delays;
 
-    let currentTime = 0;       // 累积时间游标
+    let currentTime = 0;
     let prevSentenceIdx = -1;
     let charInSentence = 0;
-    let sentenceCharCount = 0; // 当前句子的总字符数
+    let sentenceCharCount = 0;
 
     for (let i = 0; i < allGlyphs.length; i++) {
       const glyph = allGlyphs[i];
@@ -279,16 +406,14 @@ export class Renderer {
         // 上一句的 pause-after（等价于 pause）
         if (prevSentenceIdx >= 0) {
           const prevDir = this.getSentenceDir(prevSentenceIdx);
-          const pauseAfter = parseMs(prevDir['pause-after'] || prevDir.pause);
-          currentTime += pauseAfter;
+          currentTime += parseMs(prevDir['pause-after'] || prevDir.pause);
         }
 
         // 本句的 pause-before
         const curDir = this.getSentenceDir(si);
-        const pauseBefore = parseMs(curDir['pause-before']);
-        currentTime += pauseBefore;
+        currentTime += parseMs(curDir['pause-before']);
 
-        // 预计算本句字符数（用于非 typewriter 句子的时间推进）
+        // 预计算本句字符数
         sentenceCharCount = 0;
         for (let j = i; j < allGlyphs.length && allGlyphs[j].sentenceIndex === si; j++) {
           sentenceCharCount++;
@@ -298,26 +423,23 @@ export class Renderer {
         prevSentenceIdx = si;
       }
 
-      // 计算本字符的延迟
       const dir = this.getSentenceDir(si);
       const typewriterMs = parseMs(dir.typewriter);
 
       if (typewriterMs > 0) {
         delays[i] = currentTime + charInSentence * typewriterMs;
       } else {
-        // 非 typewriter 句子：如果前面有 typewriter 句子，本句的字符统一在 currentTime 出现
         delays[i] = currentTime > 0 ? currentTime : 0;
       }
 
       charInSentence++;
 
-      // 如果这是句子的最后一个字符，推进时间游标
+      // 句子最后一个字符：推进时间游标
       const nextGlyph = allGlyphs[i + 1];
       if (!nextGlyph || nextGlyph.sentenceIndex !== si) {
         if (typewriterMs > 0) {
           currentTime += sentenceCharCount * typewriterMs;
         }
-        // 非 typewriter 句子不增加时间（瞬间出现）
       }
     }
 
@@ -336,7 +458,7 @@ export class Renderer {
    * 获取有效渲染区域宽度（减去内边距）
    */
   public get renderWidth(): number {
-    return this.containerEl.clientWidth - this.canvasPadding.x * 2;
+    return Math.max(this.containerEl.clientWidth - this.canvasPadding.x * 2, 50);
   }
 
   /**
@@ -345,21 +467,7 @@ export class Renderer {
   private initTooltip(): void {
     this.tooltipEl = document.createElement('div');
     this.tooltipEl.id = 'sushiml-tooltip';
-    this.tooltipEl.style.cssText = `
-      position: absolute;
-      background: rgba(30, 30, 45, 0.95);
-      color: #fff;
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-size: 14px;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.2s;
-      z-index: 1000;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      border: 1px solid rgba(255,255,255,0.1);
-      backdrop-filter: blur(4px);
-    `;
+    this.tooltipEl.className = 'sushiml-tooltip';
     this.containerEl.appendChild(this.tooltipEl);
   }
 
@@ -367,13 +475,13 @@ export class Renderer {
    * 处理 Tooltip 检测
    */
   private handleTooltip(mx: number, my: number): void {
+    if (!this.tooltipEl) return;
     let activeAnnotation: string | null = null;
 
-    // 反向遍历（最新的/最上面的粒子优先）
-    for (let i = this.particles.length - 1; i >= 0; i--) {
-      const p = this.particles[i];
-      if (p.isMouseOver(mx, my)) {
-        const ann = p.getAnnotation();
+    for (let i = this.active.length - 1; i >= 0; i--) {
+      const pt = this.active[i];
+      if (pt.isMouseOver(mx, my)) {
+        const ann = pt.getAnnotation();
         if (ann) {
           activeAnnotation = ann;
           break;
@@ -399,7 +507,8 @@ export class Renderer {
       clearTimeout(this.dissolveTimer);
     }
     this.p5Instance.remove();
-    this.particles = [];
+    this.active = [];
+    this.dying = [];
   }
 }
 

@@ -10,6 +10,10 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+dist-player
+/public/player-template.html
+# 导出的演示产物（由 scripts/gen-demo-export.mjs 生成，可双击验证，非源码）
+sushibook-demo.html
 *.local
 
 # Editor directories and files
