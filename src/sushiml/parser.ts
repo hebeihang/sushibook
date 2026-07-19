@@ -671,6 +671,48 @@ function levenshtein(a: string, b: string): number {
 const MARK_RE = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\](?:\{([^}]+)\})?/;
 const VARIANT_RE = /^(seq|cycle|once|shuffle)\s*:\s*([\s\S]+)$/;
 
+/**
+ * Phase 4: 解析变体项，支持引号和转义
+ * - {seq:a|b|c}        → ['a', 'b', 'c']
+ * - {seq:"a|b"|c}      → ['a|b', 'c']
+ * - {seq:a\|b|c}       → ['a|b', 'c']
+ * - {seq:"a\|b"|c}     → ['a|b', 'c']（转义在引号内优先）
+ */
+function parseVariantItems(itemsStr: string): string[] {
+  const items: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  let i = 0;
+
+  while (i < itemsStr.length) {
+    const ch = itemsStr[i];
+
+    if (ch === '"' && (i === 0 || itemsStr[i - 1] !== '\\')) {
+      // 切换引号模式（非转义的引号）
+      inQuotes = !inQuotes;
+      i++;
+    } else if (ch === '|' && !inQuotes && (i === 0 || itemsStr[i - 1] !== '\\')) {
+      // 分隔符（非转义、非引号内）
+      items.push(current.trim());
+      current = '';
+      i++;
+    } else if (ch === '\\' && i + 1 < itemsStr.length && itemsStr[i + 1] === '|') {
+      // 转义 \|
+      current += '|';
+      i += 2;
+    } else {
+      current += ch;
+      i++;
+    }
+  }
+
+  if (current || itemsStr.endsWith('|')) {
+    items.push(current.trim());
+  }
+
+  return items.filter((item) => item.length > 0);
+}
+
 function tokenizeLine(
   text: string,
   nextMarkIndex: () => number,
@@ -739,7 +781,7 @@ function tokenizePlainSegment(
       tokens.push({
         type: 'variant',
         kind: variant[1] as VariantKind,
-        items: variant[2].split('|').map((s) => s.trim()),
+        items: parseVariantItems(variant[2]),
         variantIndex: nextVariantIndex(),
       });
     } else {
