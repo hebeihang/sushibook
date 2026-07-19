@@ -811,3 +811,55 @@ html, body {
   border-color: rgba(255, 107, 107, 0.5);
   color: var(--danger);
 }
+
+/* ---- Phase 5: 样式编辑面板 ---- */
+.style-panel-header {
+  font-size: 14px;
+  font-weight: 500;
+  padding: 10px 0;
+  color: var(--text-primary);
+}
+
+.style-editor {
+  width: 100%;
+  height: 200px;
+  padding: 10px;
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  overflow-y: auto;
+}
+.style-editor:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.style-panel-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.style-apply-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: rgba(108, 92, 231, 0.15);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.style-apply-btn:hover {
+  background: rgba(108, 92, 231, 0.25);
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
