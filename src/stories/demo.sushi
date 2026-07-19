@@ -20,8 +20,8 @@ enter: fade-in
 > 你拾起了那盏[[以太灯笼|由发光文字编成的灯]]{enter: flare, color: #ffd76c}。
 > ~ lantern = true
 > 灯光扫过之处，看不见的字迹一行行显形。
->> 探索深海 -> ocean
->> 仰望星空 -> sky
++ 探索深海 -> ocean
++ 仰望星空 -> sky
 
 ## ocean
 ---
@@ -34,9 +34,9 @@ speed: slow
 你潜入了[[深海]]{enter: sink}。{typewriter: 80ms}
 水波荡漾，文字在洋流中缓缓漂移。这是你第{depth}次下潜。
 {shuffle:一串气泡字从身边升起。|远处游过一队发光的省略号。|某个古老的词在暗流里一闪而过。}
->> {lantern} 举起灯笼照亮沟壑 -> abyss
->> {!lantern} 黑暗中摸索前行 -> lost
->> 浮出水面 -> surface
++ {lantern} 举起灯笼照亮沟壑 -> abyss
++ {!lantern} 黑暗中摸索前行 -> lost
++ 浮出水面 -> surface
 
 ## lost
 ---
@@ -45,7 +45,7 @@ mood: tense
 没有光，[[黑暗]]{color: #7a7a90}浓得化不开。{typewriter: 100ms}
 你分不清上下，只能退回来路。
 （岸边似乎有什么发光的东西……）
->> 退回岸边 -> start
++ 退回岸边 -> start
 
 ## abyss
 ---
@@ -57,7 +57,7 @@ enter: dissolve
 ~ peeked = false
 灯光落进[[深渊]]{color: #ff6b6b}，照出沟底一行古字。{typewriter: 100ms}
 
->> {!deciphered && !peeked} 凑近细看
++ {!deciphered && !peeked} 凑近细看
 > ~ peeked = true
 > 你屏住呼吸，一个字一个字地辨认。
 > @if {depth >= 2}
@@ -68,9 +68,9 @@ enter: dissolve
 * 伸手触碰
 > 指尖刚触到石面，整行古字忽然亮起<>
 > ，又缓缓熄灭，像一次深海的呼吸。
->> {deciphered} 抄下古字，浮上水面 -> ending
->> 再潜一次 -> ocean
->> 浮出水面 -> surface
++ {deciphered} 抄下古字，浮上水面 -> ending
++ 再潜一次 -> ocean
++ 浮出水面 -> surface
 
 ## surface
 ---
@@ -81,7 +81,7 @@ enter: fade-in
 你浮出了水面。{typewriter: 60ms}
 阳光洒在字里行间，温暖而平静。
 [[文字]]在光芒中缓缓排列，重新找到了属于自己的位置。
->> 回到岸边 -> start
++ 回到岸边 -> start
 
 ## sky
 ---
@@ -92,8 +92,8 @@ enter: typewriter
 你仰望[[星空]]{enter: sparkle}。{typewriter: 60ms}
 文字化作点点星光，在夜幕中闪烁。
 每一颗[[字星|由文字凝聚的星辰]]{relation: item}都在轻轻摇曳，编织着古老的传说。{pause: 800}
->> 进入星云 -> nebula
->> 回到地面 -> start
++ 进入星云 -> nebula
++ 回到地面 -> start
 
 ## nebula
 ---
@@ -104,7 +104,7 @@ speed: slow
 [[星云]]{color: #6c5ce7}深处暗流涌动。{typewriter: 120ms}
 文字被[[引力|无形的宇宙之力]]{enter: pull}撕扯，字形扭曲变形。{pause: 600}
 宇宙的力量让一切都在颤抖，但美丽依然在混沌中绽放。
->> 回到起点 -> start
++ 回到起点 -> start
 
 ## ending
 ---
@@ -119,4 +119,4 @@ mood: float
 故事在这里合上，但海不会忘记你第{depth}次下潜时的样子。
 「回去吧，」你轻声念着那行字<>
 ——「把故事讲给别人听。」
->> 合上书页 -> END
++ 合上书页 -> END

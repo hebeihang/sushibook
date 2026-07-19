@@ -8,7 +8,7 @@
  *   [[词语]]         → link (橙色)
  *   [[词语|注释]]    → link + string (注释)
  *   {指令}           → annotation (绿色)
- *   >> 选项 -> target → keyword (紫色)
+ *   + 选项 -> target  → keyword (紫色)
  */
 
 import { StreamLanguage, type StreamParser } from '@codemirror/language';
@@ -67,8 +67,8 @@ const sushiMLParser: StreamParser<SushiMLState> = {
         return 'annotation';
       }
 
-      // 选项行 >> / *（可带 {条件}，目标可选）
-      if (stream.match(/^(>>|\*)\s+(\{[^}]*\}\s+)?\S.*$/)) {
+      // 选项行 + / * （可带 {条件}，目标可选；支持旧符号 >> 兼容）
+      if (stream.match(/^(\+|>>|\*)\s+(\{[^}]*\}\s+)?\S.*$/)) {
         return 'keyword';
       }
 

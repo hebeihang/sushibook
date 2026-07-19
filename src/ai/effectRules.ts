@@ -41,8 +41,8 @@ export function applyEffectRules(source: string): string {
       const m = t.match(/^mood:\s*(\w+)/);
       if (m) sceneMood = m[1];
       lineTypes.push('fm-body');
-    } else if (t.startsWith('>>') || t.startsWith('* ')) {
-      // 粘性 / 一次性选项行
+    } else if (t.startsWith('+') || t.startsWith('>>') || t.startsWith('* ')) {
+      // 粘性 / 一次性选项行（+ 为新符号，>> 为兼容）
       lineTypes.push('choice');
     } else if (t.startsWith('~') || t.startsWith('//') || t.startsWith('@') || t.startsWith('->') || t.startsWith('>')) {
       // 逻辑行/注释/@控制/独立跳转/分支体：不注入效果

@@ -208,8 +208,9 @@ export interface SushiDiagnostic {
   severity: 'error' | 'warning';
   /** 稳定的机器可读码，便于测试与后续定位 */
   code:
-    | 'unknown-sentence-directive'  // 句尾 {键: 值} 键未知（疑似拼写错误）
-    | 'misplaced-word-directive';   // 词语指令出现在句尾，未紧跟 [[标记词]]
+    | 'unknown-sentence-directive'           // 句尾 {键: 值} 键未知（疑似拼写错误）
+    | 'misplaced-word-directive'            // 词语指令出现在句尾，未紧跟 [[标记词]]
+    | 'DEPRECATED_STICKY_OPTION_SYMBOL';    // 粘性选项符号 >> 已弃用，建议改用 +
   message: string;
   /** 出错所在场景 ID（尽力而为的定位信息） */
   scene?: string;

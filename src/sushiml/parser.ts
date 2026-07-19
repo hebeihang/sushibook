@@ -217,9 +217,9 @@ function isComment(line: string): boolean {
 // ============================================================
 
 /** 选项行（带跳转目标）：前缀 (标签)? {条件}? 文本 -> 目标 */
-const CHOICE_WITH_TARGET_RE = /^(>>|\*)\s+(?:\(([A-Za-z_][A-Za-z0-9_]*)\)\s+)?(?:\{([^}]+)\}\s+)?(.+?)\s+->\s+(\S+)$/;
+const CHOICE_WITH_TARGET_RE = /^(\+|>>|\*)\s+(?:\(([A-Za-z_][A-Za-z0-9_]*)\)\s+)?(?:\{([^}]+)\}\s+)?(.+?)\s+->\s+(\S+)$/;
 /** 选项行（无目标，靠分支体+汇合） */
-const CHOICE_BARE_RE = /^(>>|\*)\s+(?:\(([A-Za-z_][A-Za-z0-9_]*)\)\s+)?(?:\{([^}]+)\}\s+)?(.+)$/;
+const CHOICE_BARE_RE = /^(\+|>>|\*)\s+(?:\(([A-Za-z_][A-Za-z0-9_]*)\)\s+)?(?:\{([^}]+)\}\s+)?(.+)$/;
 const IF_RE = /^@if\s*\{([^}]+)\}\s*$/;
 const ELIF_RE = /^@elif\s*\{([^}]+)\}\s*$/;
 const ELSE_RE = /^@else\s*$/;
@@ -335,7 +335,7 @@ function parseItems(cursor: Cursor, level: number, ctx: ParseCtx, report: Report
     }
 
     // 选项组：连续的同层选项行
-    if (CHOICE_BARE_RE.test(content) && /^(>>|\*)\s/.test(content)) {
+    if (CHOICE_BARE_RE.test(content) && /^(\+|>>|\*)\s/.test(content)) {
       items.push(parseChoiceGroup(cursor, line.level, ctx, report));
       continue;
     }
@@ -399,7 +399,16 @@ function parseChoiceGroup(cursor: Cursor, level: number, ctx: ParseCtx, report: 
       target = m[5] === END_TARGET ? END_TARGET : m[5];
     } else {
       m = line.content.match(CHOICE_BARE_RE);
-      if (!m || !/^(>>|\*)\s/.test(line.content)) break;
+      if (!m || !/^(\+|>>|\*)\s/.test(line.content)) break;
+    }
+
+    // Phase 3 迁移警告：>> 已迁移为 +，保持兼容但发警告
+    if (m && m[1] === '>>') {
+      report({
+        severity: 'warning',
+        code: 'DEPRECATED_STICKY_OPTION_SYMBOL',
+        message: '粘性选项符号 >> 已弃用，建议改用 +（如 "+ 选项 -> 场景"）',
+      });
     }
 
     cursor.pos++;

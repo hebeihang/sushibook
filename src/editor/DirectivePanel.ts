@@ -34,7 +34,7 @@ const DIRECTIVE_GROUPS: DirectiveGroup[] = [
         label: '新场景',
         description: '插入完整场景模板',
         action: (ed) => ed.insertAtCursor(
-          '\n## new_scene\n---\nmood: default\n---\n在这里写场景内容。\n\n>> 选项一 -> target1\n>> 选项二 -> target2\n'
+          '\n## new_scene\n---\nmood: default\n---\n在这里写场景内容。\n\n+ 选项一 -> target1\n+ 选项二 -> target2\n'
         ),
       },
       {
@@ -192,9 +192,9 @@ const DIRECTIVE_GROUPS: DirectiveGroup[] = [
         action: (ed) => ed.insertAtCursor('{color: #6c5ce7}'),
       },
       {
-        label: '>> 选项 -> 目标',
+        label: '+ 选项 -> 目标',
         description: '粘性选项（可重复选）',
-        action: (ed) => ed.insertAtCursor('\n>> 选项文字 -> target_scene\n'),
+        action: (ed) => ed.insertAtCursor('\n+ 选项文字 -> target_scene\n'),
       },
       {
         label: '* 选项 -> 目标',
@@ -202,9 +202,9 @@ const DIRECTIVE_GROUPS: DirectiveGroup[] = [
         action: (ed) => ed.insertAtCursor('\n* 选项文字 -> target_scene\n'),
       },
       {
-        label: '>> 选项 -> END',
+        label: '+ 选项 -> END',
         description: '结局选项（显示结束画面）',
-        action: (ed) => ed.insertAtCursor('\n>> 合上书页 -> END\n'),
+        action: (ed) => ed.insertAtCursor('\n+ 合上书页 -> END\n'),
       },
     ],
   },
@@ -239,14 +239,14 @@ const DIRECTIVE_GROUPS: DirectiveGroup[] = [
         action: (ed) => ed.insertAtCursor('{gold >= 5 ? "富有" : "拮据"}'),
       },
       {
-        label: '>> {条件} 选项',
+        label: '+ {条件} 选项',
         description: '条件选项：条件为假时隐藏',
-        action: (ed) => ed.insertAtCursor('\n>> {gold >= 5} 买下它 -> shop\n'),
+        action: (ed) => ed.insertAtCursor('\n+ {gold >= 5} 买下它 -> shop\n'),
       },
       {
-        label: '>> (标签) 选项',
+        label: '+ (标签) 选项',
         description: '选项标签：自动计数选中次数，条件/插值中用 {标签} 读取',
-        action: (ed) => ed.insertAtCursor('\n>> (greet) 问候他\n> "你好。"\n'),
+        action: (ed) => ed.insertAtCursor('\n+ (greet) 问候他\n> "你好。"\n'),
       },
       {
         label: '{seq:A|B|C}',
@@ -276,7 +276,7 @@ const DIRECTIVE_GROUPS: DirectiveGroup[] = [
       {
         label: '选项分支体',
         description: '选中后追加局部叙事，之后汇合（调查循环）',
-        action: (ed) => ed.insertAtCursor('\n* 凑近细看\n> 选中后追加的文字。\n> 可以多行。\n>> 继续 -> next_scene\n'),
+        action: (ed) => ed.insertAtCursor('\n* 凑近细看\n> 选中后追加的文字。\n> 可以多行。\n+ 继续 -> next_scene\n'),
       },
       {
         label: '<> 粘连',
