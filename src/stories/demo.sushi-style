@@ -1,0 +1,21 @@
+# SushiBook 演示故事样式表（Phase 5）
+# 外置样式定义，不碰故事内容
+
+global:
+  typewriter: 80ms
+  pause: 600ms
+
+words:
+  鱼群: { color: '#6c5ce7', enter: swim }
+  星辰: { color: '#00b894', enter: sparkle }
+  以太灯笼: { color: '#ffd76c', enter: flare, size: 1.1 }
+  深海: { color: '#0984e3', enter: sink }
+  深渊: { color: '#d63031', enter: pull }
+  黑暗: { color: '#2d3436', enter: dissolve }
+  文字: { color: '#74b9ff', enter: swim }
+  星空: { color: '#6c5ce7', enter: sparkle }
+  星云: { color: '#a29bfe', enter: pull }
+
+moods:
+  tense: { typewriter: 100ms }
+  float: { typewriter: 60ms }

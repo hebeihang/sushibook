@@ -225,6 +225,8 @@ export interface SushiDocument {
   prelude: string[];
   /** 解析期诊断（内容/表现层归属歧义 → 显式报错，不再静默退化） */
   diagnostics: SushiDiagnostic[];
+  /** Phase 5: 外置样式表（可选，由编辑器加载） */
+  style?: SushiStyle;
 }
 
 /** 特殊跳转目标：结局 */
@@ -245,4 +247,43 @@ export interface CharMeta {
   enterEffect?: string;
   /** [[词语|注释]] 中的注释文本 */
   annotation?: string;
+}
+
+// ============================================================
+// Phase 5: 表现层样式系统（外置换肤）
+// ============================================================
+
+/** 词语级样式规则 */
+export interface WordStyleRule {
+  color?: string;
+  size?: number;
+  enter?: string;
+  pause?: number;
+}
+
+/** 情绪级样式覆盖 */
+export interface MoodStyles {
+  typewriter?: number;
+  pause?: number;
+  [key: string]: number | string | undefined;
+}
+
+/** 完整样式表 */
+export interface SushiStyle {
+  // 全局默认样式
+  global?: {
+    typewriter?: number;
+    pause?: number;
+  };
+  // 词语标记特定样式（key = [[标记词]] 的文本）
+  words?: Record<string, WordStyleRule>;
+  // 情绪 (mood) 特定覆盖
+  moods?: Record<string, MoodStyles>;
+}
+
+/** 样式合并结果（单场景应用级） */
+export interface ResolvedStyle {
+  typewriter?: number;
+  pause?: number;
+  wordStyles?: Record<string, WordStyleRule>;
 }
