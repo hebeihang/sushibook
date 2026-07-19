@@ -32,8 +32,15 @@ import type {
   SentenceDirectives,
   WordDirectives,
   CharMeta,
+  SushiDiagnostic,
 } from './types';
-import { SENTENCE_DIRECTIVE_KEYS, END_TARGET } from './types';
+import { SENTENCE_DIRECTIVE_KEYS, WORD_DIRECTIVE_KEYS, END_TARGET } from './types';
+
+/**
+ * 诊断上报回调（解析期打标用）。
+ * 调用方（parseScene）注入一个已绑定场景上下文的闭包；纯函数式，便于测试。
+ */
+type ReportFn = (d: Omit<SushiDiagnostic, 'scene'>) => void;
 
 // ============================================================
 // 公共 API
@@ -42,15 +49,19 @@ import { SENTENCE_DIRECTIVE_KEYS, END_TARGET } from './types';
 export function parseSushiML(source: string): SushiDocument {
   const scenes = new Map<string, SushiScene>();
   const sceneOrder: string[] = [];
+  const diagnostics: SushiDiagnostic[] = [];
   const { prelude, blocks } = splitIntoSceneBlocks(source);
 
   for (const block of blocks) {
-    const scene = parseScene(block);
+    // 每个场景注入一个绑定了场景 ID 的诊断上报闭包
+    const report: ReportFn = (d) =>
+      diagnostics.push({ ...d, scene: block.id });
+    const scene = parseScene(block, report);
     scenes.set(scene.id, scene);
     sceneOrder.push(scene.id);
   }
 
-  return { scenes, sceneOrder, prelude };
+  return { scenes, sceneOrder, prelude, diagnostics };
 }
 
 /** 插值/变体 token 的求值回调（由 bridge 注入运行时状态） */
@@ -229,7 +240,7 @@ interface ParseCtx {
   seenMarks: Set<string>;
 }
 
-function parseScene(block: SceneBlock): SushiScene {
+function parseScene(block: SceneBlock, report: ReportFn): SushiScene {
   const { frontmatter, remaining } = extractFrontmatter(block.body);
 
   // 行级 lex：计算 > 层级，过滤空行与注释
@@ -251,7 +262,7 @@ function parseScene(block: SceneBlock): SushiScene {
 
   const ctx: ParseCtx = { markIdx: 0, variantIdx: 0, seenMarks: new Set() };
   const cursor = { lines: lexed, pos: 0 };
-  const items = parseItems(cursor, 0, ctx);
+  const items = parseItems(cursor, 0, ctx, report);
 
   // 顶层兼容视图
   const sentences: SushiSentence[] = [];
@@ -280,7 +291,7 @@ interface Cursor {
  * 递归下降：解析 level 层级的连续内容项
  * 遇到更浅层级即返回（汇合）
  */
-function parseItems(cursor: Cursor, level: number, ctx: ParseCtx): SceneItem[] {
+function parseItems(cursor: Cursor, level: number, ctx: ParseCtx, report: ReportFn): SceneItem[] {
   const items: SceneItem[] = [];
 
   while (cursor.pos < cursor.lines.length) {
@@ -307,7 +318,7 @@ function parseItems(cursor: Cursor, level: number, ctx: ParseCtx): SceneItem[] {
 
     // @if 条件链
     if (IF_RE.test(content)) {
-      items.push(parseIfChain(cursor, line.level, ctx));
+      items.push(parseIfChain(cursor, line.level, ctx, report));
       continue;
     }
 
@@ -325,20 +336,20 @@ function parseItems(cursor: Cursor, level: number, ctx: ParseCtx): SceneItem[] {
 
     // 选项组：连续的同层选项行
     if (CHOICE_BARE_RE.test(content) && /^(>>|\*)\s/.test(content)) {
-      items.push(parseChoiceGroup(cursor, line.level, ctx));
+      items.push(parseChoiceGroup(cursor, line.level, ctx, report));
       continue;
     }
 
     // 普通句子
     cursor.pos++;
-    items.push({ kind: 'sentence', sentence: parseSentenceLine(content, ctx) });
+    items.push({ kind: 'sentence', sentence: parseSentenceLine(content, ctx, report) });
   }
 
   return items;
 }
 
 /** 解析 @if/@elif/@else 链（体在 level+1） */
-function parseIfChain(cursor: Cursor, level: number, ctx: ParseCtx): SceneItem {
+function parseIfChain(cursor: Cursor, level: number, ctx: ParseCtx, report: ReportFn): SceneItem {
   const branches: IfBranch[] = [];
   let seenElse = false;
 
@@ -353,19 +364,19 @@ function parseIfChain(cursor: Cursor, level: number, ctx: ParseCtx): SceneItem {
     if (branches.length === 0) {
       if (!ifMatch) break;
       cursor.pos++;
-      branches.push({ condition: ifMatch[1].trim(), body: parseItems(cursor, level + 1, ctx) });
+      branches.push({ condition: ifMatch[1].trim(), body: parseItems(cursor, level + 1, ctx, report) });
       continue;
     }
 
     if (elifMatch && !seenElse) {
       cursor.pos++;
-      branches.push({ condition: elifMatch[1].trim(), body: parseItems(cursor, level + 1, ctx) });
+      branches.push({ condition: elifMatch[1].trim(), body: parseItems(cursor, level + 1, ctx, report) });
       continue;
     }
     if (elseMatch && !seenElse) {
       seenElse = true;
       cursor.pos++;
-      branches.push({ condition: null, body: parseItems(cursor, level + 1, ctx) });
+      branches.push({ condition: null, body: parseItems(cursor, level + 1, ctx, report) });
       continue;
     }
     break; // 链结束
@@ -375,7 +386,7 @@ function parseIfChain(cursor: Cursor, level: number, ctx: ParseCtx): SceneItem {
 }
 
 /** 解析选项组：连续同层选项，各自的分支体在 level+1 */
-function parseChoiceGroup(cursor: Cursor, level: number, ctx: ParseCtx): SceneItem {
+function parseChoiceGroup(cursor: Cursor, level: number, ctx: ParseCtx, report: ReportFn): SceneItem {
   const choices: SushiChoice[] = [];
 
   while (cursor.pos < cursor.lines.length) {
@@ -392,7 +403,7 @@ function parseChoiceGroup(cursor: Cursor, level: number, ctx: ParseCtx): SceneIt
     }
 
     cursor.pos++;
-    const body = parseItems(cursor, level + 1, ctx);
+    const body = parseItems(cursor, level + 1, ctx, report);
 
     choices.push({
       text: m[4].trim(),
@@ -441,7 +452,7 @@ function parseYamlLike(text: string): SceneDirectives {
 // 内部：句子行解析
 // ============================================================
 
-function parseSentenceLine(line: string, ctx: ParseCtx): SushiSentence {
+function parseSentenceLine(line: string, ctx: ParseCtx, report?: ReportFn): SushiSentence {
   // 1. 行尾 <> 粘连
   let glueAfter = false;
   let working = line;
@@ -450,8 +461,8 @@ function parseSentenceLine(line: string, ctx: ParseCtx): SushiSentence {
     working = working.slice(0, -2).trimEnd();
   }
 
-  // 2. 行尾 {directives}（key 全部命中白名单才算指令）
-  const { text, directives } = extractTrailingDirectives(working);
+  // 2. 行尾 {directives}（解析期打标：句子指令 / 诊断 / 表达式）
+  const { text, directives } = extractTrailingDirectives(working, report);
 
   // 3. 行内 [[marks]] + {插值/变体}
   const tokens = tokenizeLine(
@@ -476,14 +487,21 @@ function parseSentenceLine(line: string, ctx: ParseCtx): SushiSentence {
 }
 
 /**
- * 提取行尾 {key: val, ...} 指令
+ * 提取行尾 {key: val, ...} 指令（解析期打标 —— 三层模型 Layer 2 表现层归属）
  *
  * 消歧规则（按序）：
  * 1. 紧跟在 ]] 后（或 ]]{词语指令} 后）的花括号 → 词语级指令，不在此处理
- * 2. 花括号内所有 key 都命中句子指令白名单 → 句子指令
- * 3. 否则 → 保留在文本中，由 tokenizeLine 按插值/变体处理
+ * 2. classifyTrailingBrace 明确归层：
+ *    - 句子指令（键全命中句子白名单）→ 返回 directives
+ *    - 错位的词语指令 / 疑似拼写错误 → 通过 report 产出诊断，文本原样保留（不静默丢弃）
+ *    - JS 插值 / 变体 → 保留在文本中，由 tokenizeLine 处理
+ *
+ * @param report - 可选诊断回调；省略时（如 effectRules 复用）保持与旧行为完全一致
  */
-export function extractTrailingDirectives(line: string): {
+export function extractTrailingDirectives(
+  line: string,
+  report?: ReportFn
+): {
   text: string;
   directives: SentenceDirectives;
 } {
@@ -494,6 +512,7 @@ export function extractTrailingDirectives(line: string): {
 
   const beforeBrace = line.slice(0, match.index!);
 
+  // 紧跟 ]] 或 ]]{词语指令} 的花括号 = 词语级指令，交给 tokenizeLine（MARK_RE）处理
   if (beforeBrace.endsWith(']]')) {
     return { text: line, directives: {} };
   }
@@ -504,15 +523,136 @@ export function extractTrailingDirectives(line: string): {
     }
   }
 
-  const directives = parseDirectiveString(match[1]);
-  const keys = Object.keys(directives);
-  const allKnown = keys.length > 0 && keys.every((k) => SENTENCE_DIRECTIVE_KEYS.has(k));
-  if (!allKnown) {
-    return { text: line, directives: {} };
+  const cls = classifyTrailingBrace(match[1]);
+  if (cls.kind === 'sentence') {
+    const punctuation = match[2] || '';
+    return { text: beforeBrace.trimEnd() + punctuation, directives: cls.directives };
+  }
+  // 归为字面/插值：如带诊断则上报（解析期打标，替代静默退化）
+  if (report && cls.diagnostic) {
+    report(cls.diagnostic);
+  }
+  return { text: line, directives: {} };
+}
+
+/**
+ * 行尾花括号分类器（解析期打标核心）。
+ *
+ * 返回 `sentence` 表示确认为句子指令；否则一律 `literal`（文本原样保留，
+ * 由 tokenizeLine 按插值/变体处理），并在「疑似写错的指令」时附带一条诊断。
+ *
+ * 判定「这是一次指令书写尝试」的信号：内容是逗号分隔的 `键` 或 `键: 值`，
+ * 且每个键都是裸标识符（形如 typewriter / pause-after）。
+ * 纯 JS 插值（`{gold}`、三元 `{a ? b : c}`、成员访问 `{p.hp}`）的键不是裸标识符
+ * 或无冒号且键非已知指令 → 判为 literal，绝不误报。
+ */
+function classifyTrailingBrace(inner: string):
+  | { kind: 'sentence'; directives: SentenceDirectives }
+  | { kind: 'literal'; diagnostic?: Omit<SushiDiagnostic, 'scene'> } {
+  // 变体函数（{seq:…} 等）：内容层/逻辑层，直接放行给 tokenizeLine
+  if (VARIANT_RE.test(inner.trim())) {
+    return { kind: 'literal' };
   }
 
-  const punctuation = match[2] || '';
-  return { text: beforeBrace.trimEnd() + punctuation, directives };
+  const directives = parseDirectiveString(inner) as SentenceDirectives;
+  const keys = Object.keys(directives);
+  if (keys.length === 0) return { kind: 'literal' };
+
+  // 所有键必须是裸标识符，才可能是一次指令书写尝试
+  const allBareIdent = keys.every((k) => /^[A-Za-z][\w-]*$/.test(k));
+  if (!allBareIdent) return { kind: 'literal' };
+
+  const hasColon = inner.includes(':');
+  const isKnown = (k: string) =>
+    SENTENCE_DIRECTIVE_KEYS.has(k) || WORD_DIRECTIVE_KEYS.has(k);
+
+  // 无冒号且没有任何已知指令键 → 纯插值（如 {gold}、{flag}），不是指令尝试
+  if (!hasColon && !keys.some(isKnown)) {
+    return { kind: 'literal' };
+  }
+
+  // —— 至此判定为「指令书写尝试」，开始归层 ——
+
+  // 全部命中句子白名单 → Layer 2 句子指令
+  if (keys.every((k) => SENTENCE_DIRECTIVE_KEYS.has(k))) {
+    return { kind: 'sentence', directives };
+  }
+
+  // 全部是词语级键 → 错位（词语指令须紧跟 [[标记词]]）
+  if (keys.every((k) => WORD_DIRECTIVE_KEYS.has(k))) {
+    return {
+      kind: 'literal',
+      diagnostic: {
+        severity: 'warning',
+        code: 'misplaced-word-directive',
+        message: `词语指令 {${inner.trim()}} 需紧跟在 [[标记词]] 之后；写在句尾会被当作普通文本，词语级动效/颜色不会生效`,
+      },
+    };
+  }
+
+  // 含未知键 → 疑似拼写错误（给出最接近的建议）
+  const unknownKeys = keys.filter((k) => !isKnown(k));
+  if (unknownKeys.length > 0) {
+    const hints = unknownKeys
+      .map((k) => {
+        const s = suggestDirectiveKey(k);
+        return s ? `「${k}」是否想写「${s}」？` : `「${k}」不是已知指令`;
+      })
+      .join(' ');
+    return {
+      kind: 'literal',
+      diagnostic: {
+        severity: 'error',
+        code: 'unknown-sentence-directive',
+        message: `句尾指令 {${inner.trim()}} 含未知键：${hints}（当前被当作普通文本，不会生效）`,
+      },
+    };
+  }
+
+  // 句子键 + 词语键混用（无未知键）：词语键错位
+  const misplacedWordKeys = keys.filter((k) => WORD_DIRECTIVE_KEYS.has(k));
+  return {
+    kind: 'literal',
+    diagnostic: {
+      severity: 'warning',
+      code: 'misplaced-word-directive',
+      message: `句尾指令 {${inner.trim()}} 混用了词语级指令「${misplacedWordKeys.join('、')}」（须紧跟 [[标记词]]）；整段被当作普通文本`,
+    },
+  };
+}
+
+/** 对未知指令键，从已知键集合中找编辑距离 ≤2 的最接近者作为建议 */
+function suggestDirectiveKey(key: string): string | undefined {
+  const candidates = [...SENTENCE_DIRECTIVE_KEYS, ...WORD_DIRECTIVE_KEYS];
+  let best: string | undefined;
+  let bestDist = Infinity;
+  for (const cand of candidates) {
+    const d = levenshtein(key.toLowerCase(), cand.toLowerCase());
+    if (d < bestDist) {
+      bestDist = d;
+      best = cand;
+    }
+  }
+  return bestDist <= 2 ? best : undefined;
+}
+
+/** 标准 Levenshtein 编辑距离（用于「是否想写」建议） */
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  let curr = new Array<number>(n + 1);
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[n];
 }
 
 // ============================================================

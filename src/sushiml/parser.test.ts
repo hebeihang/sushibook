@@ -270,6 +270,47 @@ mood: tense
   });
 });
 
+describe('parseSushiML — 解析期打标诊断（三层模型 §4.3 消除静默退化）', () => {
+  it('正确句子指令不产生诊断', () => {
+    const doc = parseSushiML('## s\n慢慢显现。{typewriter: 80ms, pause: 400}');
+    expect(doc.diagnostics).toHaveLength(0);
+  });
+
+  it('句尾指令拼写错误 → error 诊断并给出「是否想写」建议', () => {
+    const doc = parseSushiML('## s\n慢慢显现。{typewritter: 60ms}');
+    expect(doc.diagnostics).toHaveLength(1);
+    const d = doc.diagnostics[0];
+    expect(d.severity).toBe('error');
+    expect(d.code).toBe('unknown-sentence-directive');
+    expect(d.scene).toBe('s');
+    expect(d.message).toContain('typewriter'); // 建议正确拼写
+    // 静默退化已消除：文本原样保留（不丢弃），但不误当作句子指令
+    expect(Object.keys(doc.scenes.get('s')!.sentences[0].directives)).toHaveLength(0);
+  });
+
+  it('词语指令错位到句尾（漏写 [[…]]）→ warning 诊断', () => {
+    const doc = parseSushiML('## s\n那艘船缓缓驶来。{color: #ff6b6b}');
+    expect(doc.diagnostics).toHaveLength(1);
+    expect(doc.diagnostics[0].code).toBe('misplaced-word-directive');
+    expect(doc.diagnostics[0].severity).toBe('warning');
+  });
+
+  it('纯插值 {gold} / 三元表达式不误报诊断', () => {
+    const doc = parseSushiML('## s\n你还剩{gold}\n状态：{hp > 50 ? "良好" : "虚弱"}');
+    expect(doc.diagnostics).toHaveLength(0);
+  });
+
+  it('变体 {seq:…} 在句尾不误报诊断', () => {
+    const doc = parseSushiML('## s\n钟声响起。{seq:第一次|之后}');
+    expect(doc.diagnostics).toHaveLength(0);
+  });
+
+  it('诊断携带场景 ID，多场景各自归属', () => {
+    const doc = parseSushiML('## a\n文本{foo: 1}\n\n## b\n文本{bar: 2}');
+    expect(doc.diagnostics.map((d) => d.scene)).toEqual(['a', 'b']);
+  });
+});
+
 describe('parseSushiML — 执行流结构（分支体/@if/命令/子场景/粘连）', () => {
   it('选项分支体挂到 choice.body（> 层级）', () => {
     const doc = parseSushiML(`## s

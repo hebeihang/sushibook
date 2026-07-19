@@ -95,6 +95,13 @@ async function init(): Promise<void> {
   // 6. 静态校验 → 问题面板
   function validate(): void {
     const problems: Problem[] = [];
+    // 解析期诊断（{…} 归层歧义 → 显式报错，替代静默退化）
+    for (const d of storyManager.diagnostics) {
+      problems.push({
+        severity: d.severity,
+        message: d.scene ? `场景「${d.scene}」${d.message}` : d.message,
+      });
+    }
     for (const d of storyManager.validateLinks()) {
       problems.push({ severity: 'error', message: `选项指向不存在的场景: ${d.scene} → ${d.target}` });
     }

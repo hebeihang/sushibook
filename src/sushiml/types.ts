@@ -37,9 +37,12 @@ export interface SentenceDirectives {
 }
 
 /**
- * 行尾指令白名单：只有全部 key 命中白名单的 {…} 才被识别为句子指令，
- * 否则按 {表达式插值} 处理（与 Kiny「{} 只有一种含义」的原则折中，
- * 保持 SushiML 效果轨语法的向后兼容）。
+ * 句子级（表现层 / Layer 2）指令键白名单。
+ *
+ * 三层模型下，行尾 {…} 由解析器「解析期打标」：命中本集合 → 表现层句子指令；
+ * 命中 {@link WORD_DIRECTIVE_KEYS} 但未紧跟 [[标记词]] → 诊断（错位的词语指令）；
+ * 形如 `键: 值` 但键均未知 → 诊断（疑似拼写错误）；其余 → 内容/逻辑层的 {JS 表达式}。
+ * 详见 parser.ts 的 classifyTrailingBrace —— 不再靠运行时白名单「事后猜」而静默退化。
  */
 export const SENTENCE_DIRECTIVE_KEYS: ReadonlySet<string> = new Set([
   'typewriter',
@@ -59,6 +62,17 @@ export interface WordDirectives {
   color?: string;     // "#ff6b6b"
   [key: string]: string | undefined;
 }
+
+/**
+ * 词语级（表现层 / Layer 2）指令键白名单。
+ * 仅在 [[标记词]]{…} 内合法；出现在句尾 {…} 属错位，解析期打标为诊断。
+ */
+export const WORD_DIRECTIVE_KEYS: ReadonlySet<string> = new Set([
+  'enter',
+  'relation',
+  'glossary',
+  'color',
+]);
 
 // ============================================================
 // AST 节点类型（内容轨）
@@ -182,6 +196,25 @@ export interface SushiScene {
   logic: string[];
 }
 
+// ============================================================
+// 解析诊断（解析期打标 —— 替代静默退化）
+// ============================================================
+
+/**
+ * 解析期诊断：当 {…} 的语义无法被明确归层时，产出一条诊断而非静默退化成字面文本。
+ * 由 UI 问题面板 / CLI 校验消费，对应「编译期报错」而非运行时输出垃圾文本。
+ */
+export interface SushiDiagnostic {
+  severity: 'error' | 'warning';
+  /** 稳定的机器可读码，便于测试与后续定位 */
+  code:
+    | 'unknown-sentence-directive'  // 句尾 {键: 值} 键未知（疑似拼写错误）
+    | 'misplaced-word-directive';   // 词语指令出现在句尾，未紧跟 [[标记词]]
+  message: string;
+  /** 出错所在场景 ID（尽力而为的定位信息） */
+  scene?: string;
+}
+
 /** 完整文档 */
 export interface SushiDocument {
   scenes: Map<string, SushiScene>;
@@ -189,6 +222,8 @@ export interface SushiDocument {
   sceneOrder: string[];
   /** 序言区（第一个 ## 之前）的 ~ 逻辑行：全局变量声明 */
   prelude: string[];
+  /** 解析期诊断（内容/表现层归属歧义 → 显式报错，不再静默退化） */
+  diagnostics: SushiDiagnostic[];
 }
 
 /** 特殊跳转目标：结局 */

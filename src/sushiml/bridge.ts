@@ -23,6 +23,7 @@ import type {
   CharMeta,
   SceneDirectives,
   SentenceDirectives,
+  SushiDiagnostic,
   ExprToken,
   VariantToken,
 } from './types';
@@ -84,6 +85,12 @@ export class SushiMLStoryManager {
   // ---- 运行时状态 ----
   private vars: VarTable = {};
   private visits: Map<string, number> = new Map();
+  /**
+   * 变体推进进度：按「场景#调用点」键控（每个 seq/cycle/once/shuffle 调用点独立计数），
+   * 修复此前所有变体共享 visits(sceneId) 导致的「同场景锁步」缺陷（对齐 Kiny 的每调用点独立语义）。
+   * 仅在非重播（真实进入/重访场景）时 +1；重播（热重载/预览跳转）读取现值不推进，保证幂等。
+   */
+  private variantProgress: Map<string, number> = new Map();
   private chosenOnce: Set<string> = new Set();
   private ended: boolean = false;
 
@@ -167,6 +174,7 @@ export class SushiMLStoryManager {
   restart(): string | null {
     this.vars = {};
     this.visits.clear();
+    this.variantProgress.clear();
     this.chosenOnce.clear();
     this.ended = false;
     this.prevSceneId = '';
@@ -228,7 +236,7 @@ export class SushiMLStoryManager {
       switch (item.kind) {
         case 'sentence': {
           const resolved = resolveSentence(item.sentence, this.buffer.length, (t) =>
-            this.resolveToken(t, this.currentSceneId)
+            this.resolveToken(t, this.currentSceneId, replay)
           );
           this.buffer.push({
             text: resolved.text,
@@ -491,6 +499,14 @@ export class SushiMLStoryManager {
   }
 
   /**
+   * 解析期诊断（解析器对 {…} 归层歧义的显式报错，替代静默退化）。
+   * 随 reload 自动刷新（document 重新解析）。供问题面板/CLI 消费。
+   */
+  get diagnostics(): SushiDiagnostic[] {
+    return this.document.diagnostics;
+  }
+
+  /**
    * 校验所有跳转目标（选项 + 独立跳转，含分支体内；END 合法；子场景相对解析）
    */
   validateLinks(): Array<{ scene: string; target: string }> {
@@ -630,22 +646,45 @@ export class SushiMLStoryManager {
   // 内部：渲染数据
   // ============================================================
 
-  private resolveToken(token: ExprToken | VariantToken, sceneId: string): string {
+  /**
+   * 求值单个插值/变体 token。
+   *
+   * 变体推进按「场景#调用点」键控（每个调用点独立计数），而非共享 visits(sceneId)——
+   * 这样同一场景内多个 seq/cycle/once 各自独立推进，且条件分支内的变体只在真正被渲染时才计数。
+   *
+   * @param replay - 重播（热重载 / 预览跳转）：读取当前进度但不推进，保证反复重播的确定性与幂等。
+   */
+  private resolveToken(
+    token: ExprToken | VariantToken,
+    sceneId: string,
+    replay: boolean
+  ): string {
     if (token.type === 'expr') {
       return evalToText(token.code, this.vars);
     }
-    const visit = Math.max(this.visits.get(sceneId) ?? 1, 1);
     const n = token.items.length;
     if (n === 0) return '';
+
+    const key = `${sceneId}#${token.variantIndex}`;
+    let count: number;
+    if (replay) {
+      // 重播：沿用现有进度（至少 1），不推进
+      count = Math.max(this.variantProgress.get(key) ?? 1, 1);
+    } else {
+      // 真实渲染此调用点：推进该调用点自己的计数
+      count = (this.variantProgress.get(key) ?? 0) + 1;
+      this.variantProgress.set(key, count);
+    }
+
     switch (token.kind) {
       case 'seq':
-        return token.items[Math.min(visit - 1, n - 1)];
+        return token.items[Math.min(count - 1, n - 1)];
       case 'cycle':
-        return token.items[(visit - 1) % n];
+        return token.items[(count - 1) % n];
       case 'once':
-        return visit - 1 < n ? token.items[visit - 1] : '';
+        return count - 1 < n ? token.items[count - 1] : '';
       case 'shuffle':
-        return token.items[deterministicIndex(`${sceneId}#${token.variantIndex}#${visit}`, n)];
+        return token.items[deterministicIndex(`${key}#${count}`, n)];
     }
   }
 

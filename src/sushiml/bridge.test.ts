@@ -169,6 +169,34 @@ describe('SushiMLStoryManager — 变体与访问计数', () => {
     expect(mgr.advance()).toContain('初见');
     expect(mgr.advance()).toContain('初见'); // 重播同场景
   });
+
+  it('同场景内变体按调用点独立推进（修复锁步：条件分支内变体只在真正渲染时计数）', () => {
+    // 甲 每次进入 start 都渲染；乙 只在偶数次进入（@if）时渲染。
+    // 锁步旧模型：乙 会随 visits(start) 跳到第 2 项（乙Y）；
+    // 修复后：乙 第一次真正渲染时应为第 1 项（乙X）。
+    const SRC2 = `~ let n = 0
+
+## start
+~ n = n + 1
+甲{seq:甲一|甲二|甲三}
+@if {n % 2 == 0}
+> 乙{seq:乙X|乙Y|乙Z}
+>> 去中转 -> hop
+
+## hop
+中转。
+>> 回 -> start`;
+    const mgr = new SushiMLStoryManager(SRC2);
+    const first = mgr.advance()!;          // 第 1 次进 start：n=1，@if 假
+    expect(first).toContain('甲一');
+    expect(first).not.toContain('乙');     // 乙 未渲染 → 其调用点不计数
+
+    mgr.selectChoice(0);                    // 去中转 -> hop
+    const second = mgr.selectChoice(0)!;    // 回 -> start：第 2 次进入，n=2，@if 真
+    expect(second).toContain('甲二');       // 甲：第 2 项（随重访推进）
+    expect(second).toContain('乙X');        // 乙：首次渲染 → 第 1 项（独立计数）
+    expect(second).not.toContain('乙Y');    // 关键：未被 visits 锁步带跑到第 2 项
+  });
 });
 
 describe('SushiMLStoryManager — END 结局与重启', () => {
