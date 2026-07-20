@@ -15,12 +15,12 @@ import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { sushiMLLanguage, sushiMLHighlight } from './sushiMLLanguage';
 
 // ============================================================
-// 暗色编辑器主题
+// 主题感知编辑器主题（颜色来自 CSS 变量，随 daisyUI 主题切换自动刷新）
 // ============================================================
-const darkTheme = EditorView.theme({
+const editorTheme = EditorView.theme({
   '&': {
-    backgroundColor: '#0e0e16',
-    color: '#d4d4e0',
+    backgroundColor: 'var(--cm-bg)',
+    color: 'var(--cm-text)',
     fontSize: '13.5px',
     height: '100%',
   },
@@ -28,30 +28,30 @@ const darkTheme = EditorView.theme({
     fontFamily: "'JetBrains Mono', 'Fira Code', 'Noto Sans SC', monospace",
     lineHeight: '1.65',
     padding: '16px 0',
-    caretColor: '#6c5ce7',
+    caretColor: 'var(--color-primary)',
   },
   '.cm-cursor': {
-    borderLeftColor: '#6c5ce7',
+    borderLeftColor: 'var(--color-primary)',
     borderLeftWidth: '2px',
   },
   '.cm-gutters': {
-    backgroundColor: '#0a0a12',
-    color: '#444460',
+    backgroundColor: 'var(--cm-gutter-bg)',
+    color: 'var(--cm-gutter-text)',
     border: 'none',
-    borderRight: '1px solid rgba(255,255,255,0.04)',
+    borderRight: '1px solid color-mix(in oklab, var(--color-base-content) 6%, transparent)',
   },
   '.cm-activeLineGutter': {
-    backgroundColor: 'rgba(108, 92, 231, 0.08)',
-    color: '#6c5ce7',
+    backgroundColor: 'color-mix(in oklab, var(--color-primary) 14%, transparent)',
+    color: 'var(--color-primary)',
   },
   '.cm-activeLine': {
-    backgroundColor: 'rgba(108, 92, 231, 0.04)',
+    backgroundColor: 'color-mix(in oklab, var(--color-primary) 7%, transparent)',
   },
   '.cm-selectionBackground': {
-    backgroundColor: 'rgba(108, 92, 231, 0.25) !important',
+    backgroundColor: 'color-mix(in oklab, var(--color-primary) 28%, transparent) !important',
   },
   '&.cm-focused .cm-selectionBackground': {
-    backgroundColor: 'rgba(108, 92, 231, 0.3) !important',
+    backgroundColor: 'color-mix(in oklab, var(--color-primary) 34%, transparent) !important',
   },
   '.cm-line': {
     padding: '0 16px',
@@ -62,7 +62,7 @@ const darkTheme = EditorView.theme({
   '&.cm-focused': {
     outline: 'none',
   },
-}, { dark: true });
+});
 
 // ============================================================
 // EditorPanel
@@ -88,7 +88,7 @@ export class EditorPanel {
         keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
         sushiMLLanguage,
         sushiMLHighlight,
-        darkTheme,
+        editorTheme,
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {

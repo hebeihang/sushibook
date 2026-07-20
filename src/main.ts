@@ -15,6 +15,7 @@
  *     → Renderer.updateSnapshot()  [同场景追加复用 / 跨场景溶解重建]
  */
 
+import './theme.css';
 import './style.css';
 import { loadFont, FONT_CONFIG } from './infrastructure/FontLoader';
 import { SushiMLStoryManager } from './sushiml/bridge';
@@ -30,6 +31,8 @@ import { OutlinePanel } from './ui/OutlinePanel';
 import { GlossaryPanel } from './ui/GlossaryPanel';
 import { AssetPanel } from './ui/AssetPanel';
 import { ProblemsPanel, type Problem } from './ui/ProblemsPanel';
+import { initThemeSwitcher } from './ui/ThemeSwitcher';
+import { initStageBackgroundPanel } from './ui/StageBackgroundPanel';
 import { gameStore } from './store/gameStore';
 import { buildStandaloneHtml } from './player/exportHtml';
 import demoSource from './stories/demo.sushi?raw';
@@ -60,6 +63,9 @@ function showFatal(message: string): void {
 // ============================================================
 
 async function init(): Promise<void> {
+  // 0. 主题切换器（尽早绑定，index.html 已提前套用已存主题避免闪烁）
+  initThemeSwitcher($('theme-select') as HTMLSelectElement);
+
   // 1. 字体门控：Pretext 测量前必须完成加载，否则坐标错位
   const family = await loadFont();
   gameStore.getState().setFontFamily(family);
@@ -148,6 +154,9 @@ async function init(): Promise<void> {
   const editor = new EditorPanel($('editor-mount'), demoSource, (content) => {
     applySource(content);
   });
+
+  // 0.5 预览舞台背景设置面板（三层模型：背景写入场景 frontmatter 的 bg:）
+  initStageBackgroundPanel($('preview-section'), { editor, applySource });
 
   const directivePanel = new DirectivePanel($('directive-panel'));
   directivePanel.setEditor(editor);

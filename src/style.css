@@ -5,24 +5,67 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* ---- CSS 变量 ---- */
+/* ---- CSS 变量：桥接到 daisyUI 主题 token ----
+   旧变量全部映射到 daisyUI 的 --color-* / --radius-*，
+   于是整套界面无需改 HTML 即可跟随任意 daisyUI 主题（浅色/深色）。 */
 :root {
-  --bg-primary: #0c0c14;
-  --bg-secondary: #12121e;
-  --bg-card: #1a1a2e;
-  --bg-card-hover: #22223a;
-  --text-primary: #e6e6f0;
-  --text-secondary: #8888aa;
-  --text-muted: #555570;
-  --accent: #6c5ce7;
-  --accent-glow: rgba(108, 92, 231, 0.25);
-  --green: #55efc4;
-  --orange: #ffb86c;
-  --danger: #ff6b6b;
-  --border: rgba(255, 255, 255, 0.06);
-  --border-active: rgba(108, 92, 231, 0.4);
-  --radius: 10px;
-  --radius-sm: 6px;
+  --bg-primary: var(--color-base-100);
+  --bg-secondary: var(--color-base-200);
+  --bg-card: var(--color-base-200);
+  --bg-card-hover: var(--color-base-300);
+  --text-primary: var(--color-base-content);
+  --text-secondary: color-mix(in oklab, var(--color-base-content) 62%, transparent);
+  --text-muted: color-mix(in oklab, var(--color-base-content) 42%, transparent);
+  --accent: var(--color-primary);
+  --accent-glow: color-mix(in oklab, var(--color-primary) 30%, transparent);
+  --green: var(--color-success);
+  --orange: var(--color-warning);
+  --danger: var(--color-error);
+  --border: color-mix(in oklab, var(--color-base-content) 12%, transparent);
+  --border-active: color-mix(in oklab, var(--color-primary) 45%, transparent);
+
+  /* 主色分级透明（替代原先硬编码的 rgba(108,92,231,α)） */
+  --accent-08: color-mix(in oklab, var(--color-primary) 8%, transparent);
+  --accent-10: color-mix(in oklab, var(--color-primary) 10%, transparent);
+  --accent-12: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  --accent-14: color-mix(in oklab, var(--color-primary) 14%, transparent);
+  --accent-15: color-mix(in oklab, var(--color-primary) 15%, transparent);
+  --accent-20: color-mix(in oklab, var(--color-primary) 20%, transparent);
+  --accent-25: color-mix(in oklab, var(--color-primary) 25%, transparent);
+  --accent-30: color-mix(in oklab, var(--color-primary) 30%, transparent);
+  /* 中性表面分级（替代原先硬编码的 rgba(255,255,255,α)，浅色主题下自动反色） */
+  --surface-04: color-mix(in oklab, var(--color-base-content) 5%, transparent);
+  --surface-06: color-mix(in oklab, var(--color-base-content) 8%, transparent);
+  /* 状态色浅底 */
+  --ok-tint: color-mix(in oklab, var(--color-success) 16%, transparent);
+  --warn-tint: color-mix(in oklab, var(--color-warning) 16%, transparent);
+  --err-tint: color-mix(in oklab, var(--color-error) 16%, transparent);
+
+  /* 内容区域工作面：编辑器与预览舞台跟随主题，但使用比底色深一级的 surface，
+     既保持与侧栏/面板的层次统一，又让代码和文字始终可读 */
+  --editor-surface: var(--color-base-300);
+  --editor-gutter: var(--color-base-200);
+  --cm-bg: var(--editor-surface);
+  --cm-text: var(--color-base-content);
+  --cm-gutter-bg: var(--editor-gutter);
+  --cm-gutter-text: color-mix(in oklab, var(--color-base-content) 48%, transparent);
+
+  --stage-bg: var(--color-base-300);
+  --stage-text: var(--color-base-content);
+
+  /* 语法高亮 token 颜色（由 ThemeSwitcher.fixLowContrast 按主题对比度覆盖；
+     此处为初始兜底值，避免首帧闪烁） */
+  --cm-hl-heading: var(--color-info);
+  --cm-hl-operator: var(--color-info);
+  --cm-hl-attr: var(--color-secondary);
+  --cm-hl-keyword: var(--color-secondary);
+  --cm-hl-link: var(--color-warning);
+  --cm-hl-annotation: var(--color-success);
+  --cm-hl-meta: var(--color-base-content);
+  --cm-hl-comment: var(--color-base-content);
+
+  --radius: var(--radius-box, 10px);
+  --radius-sm: var(--radius-field, 6px);
   --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   --font-body: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
@@ -103,7 +146,7 @@ html, body {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: #08080f;
+  background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   overflow: hidden;
 }
@@ -146,7 +189,7 @@ html, body {
   font-size: 11px;
   padding: 1px 8px;
   border-radius: 10px;
-  background: rgba(255,255,255,0.06);
+  background: var(--surface-06);
   color: var(--text-secondary);
 }
 .btn-icon {
@@ -162,7 +205,7 @@ html, body {
   transition: all var(--transition);
 }
 .btn-icon:hover {
-  background: rgba(108, 92, 231, 0.15);
+  background: var(--accent-15);
   color: var(--accent);
 }
 
@@ -225,14 +268,14 @@ html, body {
   color: #fff;
   flex-shrink: 0;
 }
-.glossary-badge.rel-char { background: rgba(108, 92, 231, 0.5); }
+.glossary-badge.rel-char { background: color-mix(in oklab, var(--color-primary) 50%, transparent); }
 .glossary-badge.rel-place { background: rgba(85, 239, 196, 0.4); color: #0c2b22; }
 .glossary-badge.rel-item { background: rgba(255, 184, 108, 0.4); color: #3a2400; }
 .glossary-dup {
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--surface-06);
   color: var(--text-muted);
   flex-shrink: 0;
 }
@@ -252,7 +295,7 @@ html, body {
   border-radius: var(--radius-sm);
   transition: background var(--transition);
 }
-.asset-item:hover { background: rgba(255,255,255,0.04); }
+.asset-item:hover { background: var(--surface-04); }
 .asset-item:hover .asset-del { opacity: 1; }
 .asset-icon { font-size: 12px; flex-shrink: 0; }
 .asset-name {
@@ -302,9 +345,9 @@ html, body {
   cursor: pointer;
   transition: all var(--transition);
 }
-.outline-item:hover { background: rgba(255,255,255,0.04); color: var(--text-primary); }
+.outline-item:hover { background: var(--surface-04); color: var(--text-primary); }
 .outline-item.active {
-  background: rgba(108, 92, 231, 0.14);
+  background: var(--accent-14);
   color: var(--accent);
 }
 .outline-item.sub { padding-left: 24px; }
@@ -332,7 +375,7 @@ html, body {
   max-width: 70%;
   display: flex;
   flex-direction: column;
-  background: #0a0a14;
+  background: var(--bg-primary);
   border-right: 1px solid var(--border);
 }
 
@@ -349,9 +392,9 @@ html, body {
   border-radius: 12px;
   letter-spacing: 0.3px;
 }
-.status-chip.ok { background: rgba(85, 239, 196, 0.12); color: var(--green); }
-.status-chip.warn { background: rgba(255, 184, 108, 0.12); color: var(--orange); }
-.status-chip.err { background: rgba(255, 107, 107, 0.14); color: var(--danger); }
+.status-chip.ok { background: var(--ok-tint); color: var(--green); }
+.status-chip.warn { background: var(--warn-tint); color: var(--orange); }
+.status-chip.err { background: var(--err-tint); color: var(--danger); }
 
 /* ---- 问题面板 ---- */
 #problems-panel {
@@ -478,12 +521,12 @@ html, body {
   font-weight: 500;
   letter-spacing: 1px;
   text-transform: uppercase;
-  background: rgba(255,255,255,0.06);
+  background: var(--surface-06);
   color: var(--text-secondary);
 }
 
 .badge-mood {
-  background: rgba(108, 92, 231, 0.15);
+  background: var(--accent-15);
   color: var(--accent);
 }
 
@@ -491,7 +534,7 @@ html, body {
   flex: 1;
   position: relative;
   overflow: hidden;
-  background: var(--bg-primary);
+  background: var(--stage-bg);
 }
 #preview-canvas canvas {
   display: block;
@@ -506,7 +549,7 @@ html, body {
   z-index: 0;
   opacity: 0;
   transition: opacity 0.8s ease;
-  background-color: var(--bg-primary);
+  background-color: var(--stage-bg);
 }
 
 /* 注释 Tooltip（由 Renderer 动态创建） */
@@ -539,7 +582,7 @@ html, body {
   padding: 8px 20px;
   border: 1px solid var(--border-active);
   border-radius: var(--radius);
-  background: rgba(108, 92, 231, 0.08);
+  background: var(--accent-08);
   color: var(--accent);
   font-size: 14px;
   font-family: var(--font-body);
@@ -547,7 +590,7 @@ html, body {
   transition: all var(--transition);
 }
 #preview-choices button:hover {
-  background: rgba(108, 92, 231, 0.2);
+  background: var(--accent-20);
   transform: translateY(-1px);
 }
 
@@ -595,11 +638,11 @@ html, body {
 }
 .dp-tab-btn:hover {
   color: var(--text-primary);
-  background: rgba(255,255,255,0.04);
+  background: var(--surface-04);
 }
 .dp-tab-btn.active {
   color: var(--accent);
-  background: rgba(108, 92, 231, 0.12);
+  background: var(--accent-12);
   font-weight: 500;
 }
 
@@ -737,7 +780,7 @@ html, body {
   border: none;
   border-radius: var(--radius-sm);
   background: var(--accent);
-  color: white;
+  color: var(--color-primary-content, white);
   font-size: 13px;
   font-weight: 500;
   font-family: var(--font-body);
@@ -745,7 +788,7 @@ html, body {
   transition: all var(--transition);
 }
 .btn-primary:hover {
-  background: #7d6ef0;
+  background: color-mix(in oklab, var(--color-primary) 88%, black);
   box-shadow: 0 2px 12px var(--accent-glow);
 }
 .btn-primary:disabled {
@@ -757,7 +800,7 @@ html, body {
   padding: 6px 14px;
   border: 1px solid var(--accent);
   border-radius: var(--radius-sm);
-  background: rgba(108, 92, 231, 0.1);
+  background: var(--accent-10);
   color: var(--accent);
   font-size: 12px;
   font-weight: 500;
@@ -766,7 +809,7 @@ html, body {
   transition: all var(--transition);
 }
 .btn-accent:hover {
-  background: rgba(108, 92, 231, 0.25);
+  background: var(--accent-25);
 }
 
 .btn-ghost {
@@ -851,7 +894,7 @@ html, body {
   padding: 6px 14px;
   border: 1px solid var(--accent);
   border-radius: var(--radius-sm);
-  background: rgba(108, 92, 231, 0.15);
+  background: var(--accent-15);
   color: var(--accent);
   font-size: 12px;
   font-weight: 500;
@@ -860,6 +903,129 @@ html, body {
   transition: all var(--transition);
 }
 .style-apply-btn:hover {
-  background: rgba(108, 92, 231, 0.25);
+  background: var(--accent-25);
   box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+/* ---- 主题切换下拉框 ---- */
+.theme-select {
+  height: 28px;
+  padding: 0 26px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all var(--transition);
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+.theme-select:hover {
+  border-color: var(--border-active);
+  color: var(--text-primary);
+}
+.theme-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-15);
+}
+.theme-select option {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+/* ---- 舞台背景设置面板 ---- */
+.stage-bg-panel {
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.stage-bg-panel.hidden { display: none; }
+
+.stage-bg-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.stage-bg-label {
+  width: 48px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.stage-bg-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-body);
+}
+.stage-bg-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.stage-bg-presets {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.stage-bg-preset {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all var(--transition);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+}
+.stage-bg-preset:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+}
+.stage-bg-preset.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-15);
+}
+.stage-bg-row input[type="color"] {
+  width: 42px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+}
+.stage-bg-actions {
+  gap: 8px;
+}
+.stage-bg-actions .btn-primary {
+  flex: 1;
+}
+.stage-bg-actions .btn-restart {
+  flex-shrink: 0;
+}
+#stage-bg-scope {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-body);
 }

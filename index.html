@@ -6,6 +6,13 @@
   <meta name="description" content="SushiBook Studio - 生命感文案创作工具" />
   <title>SushiBook Studio</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <!-- 尽早套用已保存主题，避免首屏闪烁；默认走 daisyUI 的 --default(light) -->
+  <script>
+    try {
+      var t = localStorage.getItem('sushibook-theme');
+      if (t) document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {}
+  </script>
 </head>
 <body>
   <div id="app">
@@ -57,6 +64,7 @@
             <span id="status-chip" class="status-chip ok">✓ 校验通过</span>
           </div>
           <div class="editor-actions">
+            <select id="theme-select" class="theme-select" title="切换界面主题" aria-label="切换界面主题"></select>
             <button id="btn-ai" class="btn-accent" title="用 AI 生成分支故事">✨ AI 生成</button>
             <button id="btn-export" class="btn-ghost" title="导出为可双击独立打开的 HTML5 网页">⬇ 导出 HTML5</button>
             <button id="btn-apply" class="btn-primary" title="应用到预览（Ctrl+Enter）">▶ 应用</button>
@@ -83,7 +91,33 @@
             <div id="preview-badges">
               <span id="badge-scene" class="badge">START</span>
               <span id="badge-mood" class="badge badge-mood">default</span>
+              <button id="btn-stage-bg" class="btn-ghost btn-restart" title="舞台背景设置">🎨 背景</button>
               <button id="btn-restart" class="btn-ghost btn-restart" title="清档重开预览">↻ 重开预览</button>
+            </div>
+          </div>
+          <div id="stage-bg-panel" class="stage-bg-panel hidden">
+            <div class="stage-bg-row">
+              <span class="stage-bg-label">作用域</span>
+              <select id="stage-bg-scope" class="stage-bg-input" title="应用到当前场景还是整本书">
+                <option value="scene">本场景</option>
+                <option value="all">全部场景（统一）</option>
+              </select>
+            </div>
+            <div class="stage-bg-row">
+              <span class="stage-bg-label">颜色</span>
+              <input type="color" id="stage-bg-color" value="#ffffff" />
+            </div>
+            <div class="stage-bg-row">
+              <span class="stage-bg-label">图片 URL</span>
+              <input type="text" id="stage-bg-image" class="stage-bg-input" placeholder="https://example.com/bg.jpg" />
+            </div>
+            <div class="stage-bg-row">
+              <span class="stage-bg-label">预设</span>
+              <div id="stage-bg-presets" class="stage-bg-presets"></div>
+            </div>
+            <div class="stage-bg-row stage-bg-actions">
+              <button type="button" id="stage-bg-apply" class="btn-primary">应用</button>
+              <button type="button" id="stage-bg-clear" class="btn-ghost btn-restart">清除</button>
             </div>
           </div>
           <div id="preview-canvas">

@@ -10,6 +10,7 @@
  */
 
 import { emitter } from '../core/EventBus';
+import { markDeclarativeBg } from './stageBackground';
 
 export class HostEffects {
   private bgEl: HTMLElement;
@@ -40,11 +41,14 @@ export class HostEffects {
           this.bgEl.style.background = `url("${value}") center / cover no-repeat`;
         }
         this.bgEl.style.opacity = '1';
+        // 运行时命令接管背景：声明式标记让位
+        markDeclarativeBg(false);
         break;
       }
 
       case 'bg_hide':
         this.bgEl.style.opacity = '0';
+        markDeclarativeBg(false);
         break;
 
       case 'bgm_play': {

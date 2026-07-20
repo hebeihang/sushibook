@@ -1,7 +1,9 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
+  plugins: [tailwindcss()],
   assetsInclude: ['**/*.sushi'],
   build: {
     // B14：生产包默认 1.5MB 无分割，拆分大依赖并放宽告警阈值。

@@ -1,0 +1,27 @@
+/* ========================================
+   SushiBook Studio — Tailwind 4 + daisyUI 主题层
+   ----------------------------------------
+   仅引入 theme + utilities，刻意跳过 Tailwind preflight，
+   避免其全局 reset 影响 CodeMirror 编辑器与 p5 预览画布。
+   daisyUI 负责输出 [data-theme] 主题 token（--color-base-* 等）。
+   ======================================== */
+@layer theme, base, components, utilities;
+
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+@plugin "daisyui" {
+  themes:
+    light --default,
+    dark --prefersdark,
+    cupcake,
+    nord,
+    winter,
+    autumn,
+    valentine,
+    lofi,
+    business,
+    dracula,
+    night,
+    coffee;
+}

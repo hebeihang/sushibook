@@ -19,6 +19,8 @@ export type EventMap = {
   'system:ready': void;
   /** 窗口 resize */
   'system:resize': { width: number; height: number };
+  /** 主题切换 */
+  'theme:changed': void;
 };
 
 

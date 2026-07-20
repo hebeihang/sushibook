@@ -61,6 +61,13 @@ export class Particle {
   }
 
   /**
+   * 更新粒子配置（用于主题切换后刷新默认文字颜色）
+   */
+  public updateConfig(partial: Partial<ParticleConfig>): void {
+    this.config = { ...this.config, ...partial };
+  }
+
+  /**
    * 设置字符内容
    * 如果粒子正在飞行中，延迟到落地后才生效
    */

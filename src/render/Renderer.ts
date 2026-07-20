@@ -1,6 +1,9 @@
 import p5 from 'p5';
 import { Particle } from './Particle';
+import { DEFAULT_PARTICLE_CONFIG } from '../types/particle';
 import { emitter } from '../core/EventBus';
+import { cssVarToRGB, type RGB } from '../infrastructure/cssColor';
+import { resolveBackground, markDeclarativeBg, isDeclarativeActive } from '../ui/stageBackground';
 import { FONT_CONFIG } from '../infrastructure/FontLoader';
 import { gameStore } from '../store/gameStore';
 import type { LayoutSnapshot, GlyphData } from '../types/layout';
@@ -42,6 +45,12 @@ export class Renderer {
   /** 当前场景的 SushiML 渲染元数据 */
   private currentSceneData: SceneRenderData | null = null;
 
+  /** 当前主题的舞台文字 RGB（从 CSS 变量读取，随主题/背景切换更新） */
+  private textRGB: RGB = [230, 230, 240];
+
+  /** #preview-bg 宿主背景层（所有背景最终落到这里，画布保持透明） */
+  private hostBgEl: HTMLElement | null = null;
+
   /** Canvas 内边距 */
   private readonly canvasPadding = { x: 40, y: 60 };
 
@@ -50,8 +59,11 @@ export class Renderer {
 
   constructor(containerEl: HTMLElement) {
     this.containerEl = containerEl;
+    this.hostBgEl = containerEl.querySelector<HTMLElement>('#preview-bg');
     this.initP5();
     this.listenToEvents();
+    // 首帧背景：此时尚未收到 sceneData，回退到主题表面（applySceneBackground 内部处理 null）
+    this.applySceneBackground();
   }
 
   /**
@@ -76,11 +88,10 @@ export class Renderer {
       };
 
       p.draw = () => {
-        // 透明画布 + 半透明底色：让宿主背景层（@bg_show）透出
+        // 画布保持透明：所有背景（主题表面 / 场景 bg / 全局默认 / @bg_show）都由
+        // 底层 #preview-bg 承载，粒子直接绘制在其上，避免叠加层把背景盖成黑色。
         p.clear();
         p.noStroke();
-        p.fill(12, 12, 18, 216);
-        p.rect(0, 0, p.width, p.height);
         this.noiseOffset += 0.01;
 
         const mood = this.currentSnapshot?.mood || 'default';
@@ -144,6 +155,11 @@ export class Renderer {
     // 接收 SushiML 场景渲染元数据（必须先于 layout:snapshotUpdate 到达）
     emitter.on('sushi:sceneData', (data) => {
       this.currentSceneData = data;
+      this.applySceneBackground();
+    });
+
+    emitter.on('theme:changed', () => {
+      this.applySceneBackground();
     });
   }
 
@@ -275,7 +291,10 @@ export class Renderer {
           spawnX = tx;
           spawnY = ty;
         }
-        const particle = new Particle(this.p5Instance, glyph.char, spawnX, spawnY);
+        const particle = new Particle(this.p5Instance, glyph.char, spawnX, spawnY, {
+          ...DEFAULT_PARTICLE_CONFIG,
+          textColor: this.textRGB,
+        });
         particle.setTarget(tx, ty, 255);
         if (appendDelay > 0) {
           particle.setAppearDelay(appendDelay);
@@ -334,7 +353,10 @@ export class Renderer {
       }
       // fade-in / typewriter：已在目标位置（淡入 / 级联出现）
 
-      const particle = new Particle(this.p5Instance, glyph.char, spawnX, spawnY);
+      const particle = new Particle(this.p5Instance, glyph.char, spawnX, spawnY, {
+        ...DEFAULT_PARTICLE_CONFIG,
+        textColor: this.textRGB,
+      });
       particle.setTarget(tx, ty, 255);
 
       // 出现延迟：句子级指令 + 场景级打字机级联
@@ -496,6 +518,43 @@ export class Renderer {
       this.tooltipEl.style.opacity = '1';
     } else {
       this.tooltipEl.style.opacity = '0';
+    }
+  }
+
+  /**
+   * 应用当前场景的背景（三层解析：scene.bg > 全局默认 > 主题表面）。
+   * 把背景落到 #preview-bg（画布透明透出），并按背景计算可读文字色。
+   */
+  private applySceneBackground(): void {
+    const data = this.currentSceneData;
+    // 解析优先级：场景 frontmatter bg:  >  跟随主题（无 bg: 时）
+    const raw = data?.sceneDirectives.bg;
+    const { css, text } = resolveBackground(raw);
+
+    if (css) {
+      // 声明式背景：显示宿主层并标记为「声明式」
+      if (this.hostBgEl) {
+        this.hostBgEl.style.background = css;
+        this.hostBgEl.style.opacity = '1';
+      }
+      markDeclarativeBg(true);
+      this.textRGB = text ?? cssVarToRGB('--stage-text');
+    } else if (isDeclarativeActive()) {
+      // 无声明式背景，且上一幕是自己设的 → 清回主题表面（避免残留）
+      if (this.hostBgEl) this.hostBgEl.style.opacity = '0';
+      markDeclarativeBg(false);
+      this.textRGB = cssVarToRGB('--stage-text');
+    } else {
+      // 无声明式背景，且当前由运行时 @bg_show 控制 → 不动宿主层，沿用其背景
+      this.textRGB = cssVarToRGB('--stage-text');
+    }
+
+    // 文字色同步给所有粒子
+    for (const particle of this.active) {
+      particle.updateConfig({ textColor: this.textRGB });
+    }
+    for (const particle of this.dying) {
+      particle.updateConfig({ textColor: this.textRGB });
     }
   }
 

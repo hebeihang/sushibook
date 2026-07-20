@@ -133,22 +133,25 @@ const sushiMLParser: StreamParser<SushiMLState> = {
 };
 
 // ============================================================
-// 语法高亮主题（暗色主题）
+// 语法高亮主题（daisyUI 语义色，自动适配深浅主题）
 // ============================================================
 
+// 语法高亮主题：颜色引用「对比度修正变量」--cm-hl-*（由 ThemeSwitcher 按当前主题
+// 的编辑器背景计算，确保极简(lofi)等低对比主题下绿色/亮色仍清晰可读），随主题切换实时更新。
 export const sushiMLHighlight = syntaxHighlighting(
   HighlightStyle.define([
-    { tag: tags.heading, color: '#6cb4ee', fontWeight: 'bold' },
-    { tag: tags.meta, color: '#666680' },
-    { tag: tags.attributeName, color: '#bb86fc' },
-    { tag: tags.attributeValue, color: '#8888aa' },
-    { tag: tags.keyword, color: '#bb86fc' },
-    { tag: tags.link, color: '#ffb86c', fontWeight: '500' },
-    { tag: tags.annotation, color: '#50fa7b', fontStyle: 'italic' },
-    { tag: tags.comment, color: '#555570', fontStyle: 'italic' },
-    { tag: tags.operator, color: '#00cec9' },
+    { tag: tags.heading, color: 'var(--cm-hl-heading)', fontWeight: 'bold' },
+    { tag: tags.meta, color: 'var(--cm-hl-meta)', opacity: 0.6 },
+    { tag: tags.attributeName, color: 'var(--cm-hl-attr)' },
+    { tag: tags.attributeValue, color: 'var(--cm-hl-meta)', opacity: 0.7 },
+    { tag: tags.keyword, color: 'var(--cm-hl-keyword)' },
+    { tag: tags.link, color: 'var(--cm-hl-link)', fontWeight: '500' },
+    { tag: tags.annotation, color: 'var(--cm-hl-annotation)', fontStyle: 'italic' },
+    { tag: tags.comment, color: 'var(--cm-hl-comment)', opacity: 0.5, fontStyle: 'italic' },
+    { tag: tags.operator, color: 'var(--cm-hl-operator)' },
   ])
 );
+
 
 // ============================================================
 // 导出

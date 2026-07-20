@@ -16,6 +16,9 @@ dist-player
 sushibook-demo.html
 *.local
 
+# Local AI tooling config (not source)
+.claude/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
