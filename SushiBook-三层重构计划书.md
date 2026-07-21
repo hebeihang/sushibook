@@ -2,7 +2,7 @@
 
 > 依据文档：`SushiBook-语法评审.md`（§3 修改建议 / §4 内容层-渲染层分离）
 > 目标形态：内容层 / 表现层 / 渲染器 三层解耦，分层落在 **IR（中间表示）层**，源文件仍为作者友好的单文件。
-> 编制日期：2026-07-19 · 状态：Phase 1 / Phase 2 已完成并合入 `main`（commit `4fc3437`）
+> 编制日期：2026-07-19 · 状态：Phase 1–5 已完成并合入 `main`；Phase 6（表现层换肤落地：daisyUI 主题化 + 场景背景三层对齐）已完成并推送到 `origin/main`（commits `753302e` / `0ae4708`）
 
 ---
 
@@ -55,6 +55,7 @@ SushiBook 的核心症结是 **同一套 `{ }` 同时承载"叙事内容 / 渲�
 | **Phase 3（中期·B）** | `>>` → `+` 粘性选项符号迁移，`>` 专用于分支体 | 中（改现有 `.sushi` 内容） | ✅ 已完成 |
 | **Phase 4（中期·C）** | 变体 `\|` 引号 / 转义（`{seq:"a\|b"}`） | 低-中 | ✅ 已完成 |
 | **Phase 5（长期）** | 表现层可外置：`*.sushi-style` 换肤，不碰故事 | 中-高 | ✅ 已完成 |
+| **Phase 6（长期·延伸）** | 表现层换肤落地：daisyUI 多主题皮肤 + 场景 `bg:` 背景（三层对齐、本场景/全部场景两种作用域、预设+自定义、电子书导出生效） | 中 | ✅ 已完成 |
 
 ---
 
@@ -168,12 +169,38 @@ SushiBook 的核心症结是 **同一套 `{ }` 同时承载"叙事内容 / 渲�
 | `7682931` | feat: Phase 4 — 变体引号/转义支持 |
 | `25ba3ab` | feat: Phase 5 — 表现层外置样式系统（基础） |
 | `32fd25b` | feat: Phase 5 — 编辑器样式面板集成 |
+| `753302e` | feat: daisyUI 主题化 + 预览舞台三层对齐背景（本场景/全部场景作用域、预设+自定义、极简绿字/渐变渲染修复） |
+| `0ae4708` | fix: 语法高亮回归（cssColor 解析修复）+ 背景预设区分（纯黑/暗纹/星空）+ 确认导出电子书背景生效 |
 
 远程：`https://github.com/hebeihang/sushibook.git`，`main` 已推送同步。
 
 ---
 
-## 9. 后续方向（Phase 6+，可选）
+## 9. 表现层换肤落地（Phase 6：daisyUI 主题化 + 场景背景）
+
+> 合入提交 `753302e`（feat: daisyUI 主题化与预览舞台三层对齐背景）+ `0ae4708`（fix: 语法高亮回归 + 背景预设区分 + 导出背景确认）。`origin/main` 已同步（push `f3ba2a1..0ae4708`）。
+
+### 9.1 daisyUI 多主题皮肤（UI 全面 CSS 变量驱动）
+- 引入 daisyUI 5.6.18 + Tailwind 4（`@tailwindcss/vite`），提供 12 套可切换主题（含 `lofi` 极简等）。
+- 中间编辑器与预览舞台统一跟随主题 CSS 变量，修复浅色主题下黑块/低对比。
+- 语法高亮 `sushiMLLanguage.ts` 用 `HighlightStyle.define` 引用语义色 `var(--color-*)`；`lofi` 等低对比主题下，仅绿色指令（`annotation`）走可覆盖的 `--cm-hl-annotation`，由 `style.css` 的 `[data-theme='lofi']` 规则压成深绿 `#15803d` 保证可读。
+- 色彩解析 `cssColor.ts` 兼容现代浏览器空格分隔的 `rgb(r g b)` / `rgba`（daisyUI5 用 `oklch`，序列化后为空格分隔），避免回退成近黑导致高亮全失。
+
+### 9.2 预览舞台背景（Layer-2 对齐）
+- **对齐三层模型**：背景归属 Layer 2（表现层），落地为场景 frontmatter 的 `bg:` 字段，随 `.sushi` 保存与导出、可移植，而非原先 localStorage 的 UI 层开关。
+- 无需改 bridge/parser：`SceneDirectives` 为开放索引类型，`SceneRenderData.sceneDirectives` 已透传 `bg:`。
+- `StageBackgroundPanel` 用纯字符串改写写入场景头部（`setSceneBgInSource`/`clearSceneBgInSource`）。
+- **两种作用域**：`本场景`（单页个别设定，优先级最高）/ `全部场景（统一）`（对 `allSceneIds()` 每个场景写同一 `bg:`，整本统一色）。
+- `stageBackground.ts` 共享背景模型：`resolveBackground()` 正确解析 预设 id / 图片 URL / 颜色 / 渐变 并返回对应可读文字色；预设含 羊皮纸（金）、暗纹（暖褐编织纹理）、星空（冷蓝辉光+星点）、纯白、纯黑（纯平#000），三深色区分明显。
+- 声明式 `bg:` 与运行时命令 `@bg_show`/`@bg_hide` 通过共享标志 `markDeclarativeBg`/`isDeclarativeActive` 互斥，互不覆盖。
+- `Renderer` 画布透明，所有背景统一走 `#preview-bg`。
+
+### 9.3 导出电子书背景确认
+- 导出路径 `exportHtml.ts` → `public/player-template.html` 复用**同一 `Renderer`**（`playerMain.ts` 中 `new Renderer(previewCanvas)`）。
+- `Renderer.applySceneBackground()` 读取 `sceneDirectives.bg` 写入 `#preview-bg`，player 模板含该元素与 `style.background` 应用逻辑。
+- 故场景 `bg:` 随故事源码注入导出书，背景在生成的电子书中生效。
+
+## 10. 后续方向（Phase 7+，可选）
 
 - **渲染层完全集成**：将 `resolveWordStyle()` 接入 Renderer，实际应用样式规则
 - **自动样式加载**：编辑器自动检测 `*.sushi-style` 文件并加载
@@ -183,4 +210,4 @@ SushiBook 的核心症结是 **同一套 `{ }` 同时承载"叙事内容 / 渲�
 
 ---
 
-*v1.0 计划书（完成） · Phase 1-5 全部落地 · 2026-07-19*
+*v1.0 计划书（完成） · Phase 1-6 全部落地 · 最近更新 2026-07-21（Phase 6 表现层换肤落地已推送 origin/main）*
