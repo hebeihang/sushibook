@@ -35,7 +35,10 @@ export interface Preset {
   text: RGB;
 }
 
-/** 风格化预设（含羊皮纸等纹理背景） */
+/** 风格化预设（含羊皮纸等纹理背景）。暗纹/星空/纯黑刻意做出明显差异：
+ *  - 纯黑：纯平黑（无渐变、无纹理），与下方两种「有内容」的深色一眼区分
+ *  - 暗纹：暖调（棕褐）斜纹编织感，偏「布料」
+ *  - 星空：冷调（蓝）径向辉光 + 星点，偏「夜空」 */
 export const PRESETS: Preset[] = [
   {
     id: 'parchment',
@@ -46,17 +49,17 @@ export const PRESETS: Preset[] = [
   {
     id: 'dark-cloth',
     label: '暗纹',
-    css: 'linear-gradient(180deg, #1a1a2e 0%, #12121e 100%)',
-    text: [230, 230, 240],
+    css: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 5px), linear-gradient(160deg, #342e26 0%, #1b1714 100%)',
+    text: [232, 226, 214],
   },
   {
     id: 'starry',
     label: '星空',
-    css: 'radial-gradient(ellipse at bottom, #1b2735 0%, #090a0f 100%)',
-    text: [234, 242, 255],
+    css: 'radial-gradient(1.5px 1.5px at 18% 22%, rgba(255,255,255,0.9), transparent), radial-gradient(1px 1px at 72% 14%, rgba(255,255,255,0.75), transparent), radial-gradient(2px 2px at 44% 40%, rgba(205,225,255,0.85), transparent), radial-gradient(1px 1px at 63% 58%, rgba(255,255,255,0.6), transparent), radial-gradient(circle at 50% 115%, #3a5a9e 0%, #16204a 42%, #050814 100%)',
+    text: [222, 232, 255],
   },
   { id: 'white', label: '纯白', css: '#ffffff', text: [26, 26, 26] },
-  { id: 'black', label: '纯黑', css: '#0c0c14', text: [230, 230, 240] },
+  { id: 'black', label: '纯黑', css: '#000000', text: [230, 230, 240] },
 ];
 
 // ---- 背景归属标记：声明式(frontmatter bg:) 与 运行时(@bg_show) 共用 #preview-bg，

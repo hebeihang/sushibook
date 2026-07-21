@@ -7,6 +7,23 @@
 
 export type RGB = [number, number, number];
 
+/**
+ * 解析浏览器返回的 computed color 字符串为 [r,g,b]。
+ * 注意：现代浏览器对 oklch / color-mix 来源的颜色可能序列化为
+ * 空格分隔的 `rgb(r g b)` 或带透明度的 `rgb(r g b / a)`，
+ * 旧式正则只匹配 `rgb(r, g, b)` 会全部失败 → 回退近黑。这里两种都兼容。
+ */
+function parseComputedColor(computed: string): RGB | null {
+  const m = computed.match(/rgba?\(([^)]*)\)/i);
+  if (!m) return null;
+  const parts = m[1]
+    .split(/[,/\s]+/)
+    .filter((s) => s.length > 0)
+    .map(Number);
+  if (parts.length < 3 || parts.some((n) => Number.isNaN(n))) return null;
+  return [parts[0], parts[1], parts[2]];
+}
+
 /** 把任意 CSS 变量解析为 [r, g, b]（浏览器会帮我们完成 oklch→rgb 转换） */
 export function cssVarToRGB(varName: string): RGB {
   const probe = document.createElement('div');
@@ -17,9 +34,7 @@ export function cssVarToRGB(varName: string): RGB {
   const computed = getComputedStyle(probe).color;
   document.body.removeChild(probe);
 
-  const m = computed.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
-  if (!m) return [20, 20, 28];
-  return [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)];
+  return parseComputedColor(computed) ?? [20, 20, 28];
 }
 
 /** sRGB 相对亮度 */
@@ -77,9 +92,7 @@ export function colorStringToRGB(input: string): RGB {
   const computed = getComputedStyle(probe).color;
   document.body.removeChild(probe);
 
-  const m = computed.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
-  if (!m) return [20, 20, 28];
-  return [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)];
+  return parseComputedColor(computed) ?? [20, 20, 28];
 }
 
 /**

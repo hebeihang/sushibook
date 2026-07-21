@@ -49,8 +49,9 @@ function applyTheme(theme: string): void {
 }
 
 /**
- * 对低对比主题（如 lofi）自动加深/提亮内容区文字，确保编辑器与舞台可读。
- * 同时修正语法高亮各 token 颜色（--cm-hl-*），避免极简等主题下亮绿/亮紫看不清。
+ * 对低对比主题自动加深/提亮内容区文字，确保编辑器与舞台可读。
+ * 语法高亮各 token 直接用语义色（sushiMLLanguage.ts），不在此处计算，
+ * 仅极简(lofi)的绿色由 style.css 的 [data-theme="lofi"] 覆盖处理。
  */
 export function fixLowContrast(): void {
   const root = document.documentElement;
@@ -60,32 +61,6 @@ export function fixLowContrast(): void {
 
   setOrReset(root, '--cm-text', content, ensureContrast(content, editorBg, CONTRAST_TARGET));
   setOrReset(root, '--stage-text', content, ensureContrast(content, stageBg, CONTRAST_TARGET));
-
-  // 语法高亮：每个 token 取对应语义色，按编辑器背景做对比度修正（普通 4.5 / 弱化 3）
-  const info = cssVarToRGB('--color-info');
-  const secondary = cssVarToRGB('--color-secondary');
-  const warning = cssVarToRGB('--color-warning');
-  const success = cssVarToRGB('--color-success');
-
-  setHl(root, '--cm-hl-heading', info, editorBg, 4.5);
-  setHl(root, '--cm-hl-operator', info, editorBg, 4.5);
-  setHl(root, '--cm-hl-attr', secondary, editorBg, 4.5);
-  setHl(root, '--cm-hl-keyword', secondary, editorBg, 4.5);
-  setHl(root, '--cm-hl-link', warning, editorBg, 4.5);
-  setHl(root, '--cm-hl-annotation', success, editorBg, 4.5); // 极简绿字看不清的根因修复
-  setHl(root, '--cm-hl-meta', content, editorBg, 3);
-  setHl(root, '--cm-hl-comment', content, editorBg, 3);
-}
-
-function setHl(
-  root: HTMLElement,
-  name: string,
-  fg: [number, number, number],
-  bg: [number, number, number],
-  target: number
-): void {
-  const adjusted = ensureContrast(fg, bg, target);
-  root.style.setProperty(name, `rgb(${adjusted.join(',')})`);
 }
 
 function setOrReset(root: HTMLElement, name: string, original: [number, number, number], adjusted: [number, number, number]): void {

@@ -136,19 +136,21 @@ const sushiMLParser: StreamParser<SushiMLState> = {
 // 语法高亮主题（daisyUI 语义色，自动适配深浅主题）
 // ============================================================
 
-// 语法高亮主题：颜色引用「对比度修正变量」--cm-hl-*（由 ThemeSwitcher 按当前主题
-// 的编辑器背景计算，确保极简(lofi)等低对比主题下绿色/亮色仍清晰可读），随主题切换实时更新。
+// 语法高亮主题：直接引用 daisyUI 语义色（各主题下都已可读）。
+// 仅「指令/注释」的绿色（annotation）走 --cm-hl-annotation 变量，以便极简(lofi)
+// 等浅底主题在 CSS 层把它压暗（见 style.css 的 [data-theme="lofi"] 覆盖），
+// 避免亮绿看不清。其余 token 直接用语义色，不依赖 JS 计算，稳定可读。
 export const sushiMLHighlight = syntaxHighlighting(
   HighlightStyle.define([
-    { tag: tags.heading, color: 'var(--cm-hl-heading)', fontWeight: 'bold' },
-    { tag: tags.meta, color: 'var(--cm-hl-meta)', opacity: 0.6 },
-    { tag: tags.attributeName, color: 'var(--cm-hl-attr)' },
-    { tag: tags.attributeValue, color: 'var(--cm-hl-meta)', opacity: 0.7 },
-    { tag: tags.keyword, color: 'var(--cm-hl-keyword)' },
-    { tag: tags.link, color: 'var(--cm-hl-link)', fontWeight: '500' },
+    { tag: tags.heading, color: 'var(--color-info)', fontWeight: 'bold' },
+    { tag: tags.meta, color: 'var(--color-base-content)', opacity: 0.6 },
+    { tag: tags.attributeName, color: 'var(--color-secondary)' },
+    { tag: tags.attributeValue, color: 'var(--color-base-content)', opacity: 0.7 },
+    { tag: tags.keyword, color: 'var(--color-secondary)' },
+    { tag: tags.link, color: 'var(--color-warning)', fontWeight: '500' },
     { tag: tags.annotation, color: 'var(--cm-hl-annotation)', fontStyle: 'italic' },
-    { tag: tags.comment, color: 'var(--cm-hl-comment)', opacity: 0.5, fontStyle: 'italic' },
-    { tag: tags.operator, color: 'var(--cm-hl-operator)' },
+    { tag: tags.comment, color: 'var(--color-base-content)', opacity: 0.5, fontStyle: 'italic' },
+    { tag: tags.operator, color: 'var(--color-info)' },
   ])
 );
 

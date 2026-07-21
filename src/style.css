@@ -53,22 +53,22 @@
   --stage-bg: var(--color-base-300);
   --stage-text: var(--color-base-content);
 
-  /* 语法高亮 token 颜色（由 ThemeSwitcher.fixLowContrast 按主题对比度覆盖；
-     此处为初始兜底值，避免首帧闪烁） */
-  --cm-hl-heading: var(--color-info);
-  --cm-hl-operator: var(--color-info);
-  --cm-hl-attr: var(--color-secondary);
-  --cm-hl-keyword: var(--color-secondary);
-  --cm-hl-link: var(--color-warning);
+  /* 语法高亮：多数 token 直接用语义色（见 sushiMLLanguage.ts）。
+     仅 annotation（指令/注释的绿色）走此变量，便于浅底主题(如 lofi)压暗，
+     避免亮绿看不清；其余 token 不依赖 JS 计算。 */
   --cm-hl-annotation: var(--color-success);
-  --cm-hl-meta: var(--color-base-content);
-  --cm-hl-comment: var(--color-base-content);
 
   --radius: var(--radius-box, 10px);
   --radius-sm: var(--radius-field, 6px);
   --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   --font-body: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* 极简(lofi)为浅底主题，原生 --color-success 亮绿对比度不足；
+   在 CSS 层把指令/注释的绿色压暗为深绿，保证可读（仅此主题覆盖）。 */
+[data-theme='lofi'] {
+  --cm-hl-annotation: #15803d;
 }
 
 /* ---- Reset ---- */
